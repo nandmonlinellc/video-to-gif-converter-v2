@@ -3,18 +3,23 @@ import time
 from flask import Flask, render_template, request, jsonify, url_for
 from moviepy import VideoFileClip
 from werkzeug.utils import secure_filename
+from werkzeug.middleware.proxy_fix import ProxyFix # <-- 1. IMPORT PROXYFIX
 from datetime import datetime
 from apscheduler.schedulers.background import BackgroundScheduler
 import atexit
 
 app = Flask(__name__)
 
+# --- Add ProxyFix Middleware ---
+# This tells Flask to trust the 'X-Forwarded-Proto' header from the proxy (Google's load balancer)
+# and correctly generate HTTPS URLs in a production environment.
+app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_prefix=1) # <-- 2. APPLY THE MIDDLEWARE
+
 # --- Configuration ---
 app.config['UPLOAD_FOLDER'] = 'static/uploads/'
 app.config['GIF_FOLDER'] = 'static/gifs/'
-# For production, this should be set via an environment variable
 app.config['SECRET_KEY'] = os.environ.get('FLASK_SECRET_KEY', 'a-default-dev-secret-key-that-is-not-secure')
-app.config['MAX_CONTENT_LENGTH'] = 50 * 1024 * 1024  # 50 MB max upload size
+app.config['MAX_CONTENT_LENGTH'] = 50 * 1024 * 1024
 
 # --- Ensure Folders Exist ---
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
@@ -79,11 +84,12 @@ def convert_video_to_gif():
             os.remove(video_path)
 
 def cleanup_old_files():
-    """Deletes files older than 1 hour from GIF_FOLDER."""
+    """Deletes files older than 24 hours from the GIF_FOLDER."""
     with app.app_context():
         app.logger.info("--- Running scheduled cleanup for old GIFs ---")
         now = time.time()
-        one_hour_ago = now - 3600  # 1 hour in seconds
+        # Change cutoff to 24 hours (86400 seconds)
+        twenty_four_hours_ago = now - 86400
         
         folder_path = app.config['GIF_FOLDER']
         try:
@@ -91,7 +97,8 @@ def cleanup_old_files():
                 file_path = os.path.join(folder_path, filename)
                 if os.path.isfile(file_path):
                     try:
-                        if os.path.getmtime(file_path) < one_hour_ago:
+                        # Check if file is older than 24 hours
+                        if os.path.getmtime(file_path) < twenty_four_hours_ago:
                             os.remove(file_path)
                             app.logger.info(f"Deleted old GIF: {filename}")
                     except Exception as e:
@@ -100,19 +107,14 @@ def cleanup_old_files():
             app.logger.error(f"Error accessing folder {folder_path}: {e}")
     app.logger.info("--- Cleanup complete ---")
 
-
 # --- Scheduler Setup ---
 scheduler = BackgroundScheduler(daemon=True)
-# Schedule the cleanup job to run every 1 hour
-scheduler.add_job(cleanup_old_files, 'interval', hours=1)
+# Change interval to run once every 24 hours
+scheduler.add_job(cleanup_old_files, 'interval', hours=24)
 scheduler.start()
 
 # --- Graceful Shutdown ---
-# Shut down the scheduler when the app exits
 atexit.register(lambda: scheduler.shutdown())
 
 if __name__ == '__main__':
-    # Note: Using debug=True will cause the scheduler to run twice.
-    # This is expected behavior with the Flask reloader.
-    # It will function correctly in a production environment (e.g., with Gunicorn).
     app.run(debug=True, use_reloader=True)
