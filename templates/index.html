@@ -1,0 +1,320 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Video to GIF Converter</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            font-family: 'Inter', sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, 'Noto Sans', sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol', 'Noto Color Emoji';
+            background-color: #f3f4f6; /* bg-gray-100 */
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
+        }
+        .container {
+            max-width: 600px;
+            margin: 2rem auto;
+            padding: 2rem;
+            border-radius: 1rem;
+            box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+        }
+        .header {
+            text-align: center;
+            margin-bottom: 2rem;
+        }
+        .header h1 {
+            font-weight: 700;
+            /* Gradient applied via Tailwind */
+        }
+        .header p {
+            color: #6b7280;
+            font-size: 1.125rem; /* text-lg */
+            margin-top: 0.5rem;
+        }
+        .form-group {
+            margin-bottom: 1.5rem;
+        }
+        .form-label {
+            display: block;
+            margin-bottom: 0.5rem;
+            font-weight: 500;
+            color: #374151;
+        }
+        .form-input, .form-select {
+            width: 100%;
+            padding: 0.75rem 1rem;
+            border-radius: 0.5rem;
+            border: 1px solid #d1d5db; /* border-gray-300 */
+            transition: border-color 0.2s, box-shadow 0.2s;
+            box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05); /* shadow-sm */
+        }
+        .form-input:focus, .form-select:focus {
+            outline: none;
+            border-color: #3b82f6; /* border-blue-500 */
+            box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.3); /* focus:ring-blue-500 with opacity */
+        }
+        .submit-btn {
+            width: 100%;
+            padding: 0.875rem;
+            background-color: #3b82f6;
+            color: white;
+            font-weight: 600;
+            border-radius: 0.5rem;
+            border: none;
+            cursor: pointer;
+            transition: background-color 0.2s;
+            /* Focus state added via Tailwind */
+        }
+        .submit-btn:hover {
+            background-color: #2563eb;
+        }
+        .submit-btn:disabled {
+            background-color: #9ca3af;
+            cursor: not-allowed;
+        }
+        #video-preview, #gif-result {
+            max-width: 100%;
+            border-radius: 0.75rem;
+            border: 2px solid #e5e7eb; /* border-gray-200 */
+            padding: 0.5rem;
+            background-color: #f9fafb;
+        }
+
+        .spinner {
+            width: 40px;
+            height: 40px;
+            border: 4px solid #d1d5db;
+            border-top-color: #3b82f6;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 1rem;
+        }
+        .download-btn {
+            display: inline-block;
+            margin-top: 1rem;
+            padding: 0.75rem 1.5rem;
+            background-color: #10b981;
+            color: white;
+            text-decoration: none;
+            border-radius: 0.5rem;
+            font-weight: 500;
+            transition: background-color 0.2s;
+        }
+        .download-btn:hover {
+            background-color: #059669;
+        }
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        /* Transition helper classes */
+        .transition-section {
+            opacity: 0;
+            max-height: 0;
+            overflow: hidden;
+            transition: opacity 0.3s ease-out, max-height 0.3s ease-out, transform 0.3s ease-out, margin-top 0.3s ease-out;
+            transform: translateY(-10px);
+            margin-top: 0 !important;
+        }
+        .transition-section.visible {
+            opacity: 1;
+            max-height: 1000px; /* Adjust if content can be taller */
+            transform: translateY(0);
+            margin-top: 2rem !important; /* Restore original margin */
+        }
+
+        /* Custom File Input Label */
+        .file-input-label-styled {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            width: 100%;
+            min-height: 8rem; /* h-32 */
+            padding: 1rem; /* p-4 */
+            transition: background-color 0.2s ease-in-out, border-color 0.2s ease-in-out;
+            background-color: #ffffff; /* bg-white */
+            border-width: 2px;
+            border-style: dashed;
+            border-color: #d1d5db; /* border-gray-300 */
+            border-radius: 0.5rem; /* rounded-md */
+            cursor: pointer;
+        }
+        .file-input-label-styled:hover {
+            border-color: #9ca3af; /* hover:border-gray-400 */
+            background-color: #f9fafb; /* hover:bg-gray-50 */
+        }
+    </style>
+</head>
+<body class="bg-gray-100">
+    <div class="container bg-white">
+        <div class="header">
+            <h1 class="text-3xl sm:text-4xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-blue-600 to-purple-600 pb-1">✨ Video to GIF Converter ✨</h1>
+            <p class="text-gray-600 mt-1 text-lg">Upload your video, set options, and get a high-quality GIF.</p>
+        </div>
+
+        <form id="converter-form" enctype="multipart/form-data">
+            <!-- File Upload -->
+            <div class="form-group">
+                <label for="video-upload" class="form-label">1. Upload Video File</label>
+                <label for="video-upload" class="file-input-label-styled">
+                    <span class="flex items-center space-x-2">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="w-8 h-8 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5" />
+                        </svg>
+                        <span class="font-medium text-gray-600">
+                            Click to upload or <span class="text-blue-600 hover:underline">drag and drop</span>
+                        </span>
+                    </span>
+                    <span id="file-name-display" class="mt-2 text-sm text-gray-500">No file selected</span>
+                </label>
+                <input type="file" id="video-upload" name="video" class="hidden" accept="video/*" required>
+            </div>
+            
+            <!-- Video Preview -->
+            <div id="video-preview-container" class="transition-section">
+                <label class="form-label">Video Preview</label>
+                <video id="video-preview" controls></video>
+            </div>
+
+            <!-- Conversion Options -->
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div class="form-group">
+                    <label for="start_time" class="form-label">Start Time (sec)</label>
+                    <input type="number" id="start_time" name="start_time" class="form-input" placeholder="e.g., 0" min="0" step="0.1">
+                </div>
+                <div class="form-group">
+                    <label for="end_time" class="form-label">End Time (sec)</label>
+                    <input type="number" id="end_time" name="end_time" class="form-input" placeholder="e.g., 5" min="0" step="0.1">
+                </div>
+            </div>
+
+            <div class="form-group">
+                <label for="fps" class="form-label">Frames Per Second (FPS)</label>
+                <select id="fps" name="fps" class="form-select">
+                    <option value="10" selected>10 FPS (Standard)</option>
+                    <option value="15">15 FPS (Smoother)</option>
+                    <option value="20">20 FPS (High Quality)</option>
+                    <option value="24">24 FPS (Cinema Quality)</option>
+                </select>
+            </div>
+
+            <!-- Submit Button -->
+            <button type="submit" id="submit-btn" class="submit-btn focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500">Convert to GIF</button>
+        </form>
+
+        <!-- Loading Indicator -->
+        <div id="loading" class="transition-section text-center">
+            <div class="spinner"></div>
+            <p class="text-gray-600 font-medium">Converting your video... Please wait.</p>
+        </div>
+        
+        <!-- Error Message -->
+        <div id="error-message" class="transition-section text-red-700 font-medium p-4 bg-red-100 border border-red-300 rounded-lg"></div>
+
+        <!-- GIF Result -->
+        <div id="gif-container" class="transition-section text-center">
+            <h2 class="text-2xl font-bold text-gray-800 mb-4">Your GIF is Ready! 🎉</h2>
+            <img id="gif-result" src="" alt="Generated GIF">
+            <a id="download-btn" href="" class="download-btn" download="converted.gif">Download GIF</a>
+        </div>
+    </div>
+
+    <script>
+        const form = document.getElementById('converter-form');
+        const videoUpload = document.getElementById('video-upload');
+        const videoPreviewContainer = document.getElementById('video-preview-container');
+        const videoPreview = document.getElementById('video-preview');
+        const startTimeInput = document.getElementById('start_time');
+        const endTimeInput = document.getElementById('end_time');
+        const loadingDiv = document.getElementById('loading');
+        const gifContainer = document.getElementById('gif-container');
+        const gifResult = document.getElementById('gif-result');
+        const downloadBtn = document.getElementById('download-btn');
+        const submitBtn = document.getElementById('submit-btn');
+        const errorMessageDiv = document.getElementById('error-message');
+        const fileNameDisplay = document.getElementById('file-name-display');
+
+        // Helper function to show an element with transition
+        function showElement(el) {
+            el.classList.add('visible');
+        }
+
+        // Helper function to hide an element with transition
+        function hideElement(el) {
+            el.classList.remove('visible');
+        }
+
+        // --- Event Listener for File Upload ---
+        videoUpload.addEventListener('change', function(event) {
+            // Reset UI on new file selection
+            hideElement(gifContainer);
+            hideElement(errorMessageDiv);
+            hideElement(videoPreviewContainer);
+            
+            const file = event.target.files[0];
+            if (file) {
+                const videoURL = URL.createObjectURL(file);
+                videoPreview.src = videoURL;
+                showElement(videoPreviewContainer);
+                fileNameDisplay.textContent = file.name;
+                fileNameDisplay.classList.remove('text-gray-500');
+                fileNameDisplay.classList.add('text-green-600', 'font-medium');
+
+                // Once metadata is loaded, populate start/end times
+                videoPreview.onloadedmetadata = () => {
+                    URL.revokeObjectURL(videoPreview.src); // Clean up object URL after loading
+                    startTimeInput.value = 0;
+                    endTimeInput.value = Math.floor(videoPreview.duration);
+                };
+            }
+        });
+
+        // --- Event Listener for Form Submission ---
+        form.addEventListener('submit', async function(event) {
+            event.preventDefault();
+
+            // --- UI Changes for Loading State ---
+            showElement(loadingDiv);
+            hideElement(gifContainer);
+            hideElement(errorMessageDiv);
+            submitBtn.disabled = true;
+            submitBtn.textContent = 'Converting...';
+
+            const formData = new FormData(form);
+
+            try {
+                const response = await fetch('/convert', {
+                    method: 'POST',
+                    body: formData,
+                });
+
+                const result = await response.json();
+
+                if (response.ok) {
+                    // --- Success Case ---
+                    gifResult.src = result.gif_url;
+                    downloadBtn.href = result.gif_url;
+                    showElement(gifContainer);
+                } else {
+                    // --- Error Case ---
+                    errorMessageDiv.textContent = result.error || 'An unknown error occurred.';
+                    showElement(errorMessageDiv);
+                }
+
+            } catch (error) {
+                // --- Network or other fetch errors ---
+                errorMessageDiv.textContent = 'A network error occurred. Please try again.';
+                showElement(errorMessageDiv);
+            } finally {
+                // --- Reset UI from Loading State ---
+                hideElement(loadingDiv);
+                submitBtn.disabled = false;
+                submitBtn.textContent = 'Convert to GIF';
+            }
+        });
+    </script>
+</body>
+</html>
