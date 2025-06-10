@@ -39,13 +39,13 @@ A simple web application built with Flask and MoviePy to convert video files (MP
         *   macOS/Linux: `source venv/bin/activate`
 
 3.  **Install dependencies:**
-    Create a `requirements.txt` file with the following content:
-    ```txt
-    Flask
-    moviepy
-    Werkzeug
+    Ensure your `requirements.txt` file lists all necessary packages.
+    If you have your dependencies installed in your virtual environment,
+    you can generate/update it with:
+    ```bash
+    pip freeze > requirements.txt
     ```
-    Then run:
+    Then install:
     ```bash
     pip install -r requirements.txt
     ```

@@ -1,20 +1,18 @@
 import os
-from flask import Flask, render_template, request, redirect, url_for, flash, jsonify
-from moviepy import VideoFileClip  # CORRECTED IMPORT for MoviePy 2.x
-from werkzeug.utils import secure_filename
 import time
-from datetime import datetime, timedelta
+from flask import Flask, render_template, request, jsonify, url_for
+from moviepy import VideoFileClip
+from werkzeug.utils import secure_filename
+from datetime import datetime
 from apscheduler.schedulers.background import BackgroundScheduler
+import atexit
 
 app = Flask(__name__)
 
 # --- Configuration ---
-# It's a good practice to use a dedicated folder for uploads and generated files
-# that is not within the static folder if they are temporary.
-# For simplicity in this example, we will keep them in static to easily serve them.
 app.config['UPLOAD_FOLDER'] = 'static/uploads/'
 app.config['GIF_FOLDER'] = 'static/gifs/'
-# For production, set this via an environment variable in Elastic Beanstalk
+# For production, this should be set via an environment variable
 app.config['SECRET_KEY'] = os.environ.get('FLASK_SECRET_KEY', 'a-default-dev-secret-key-that-is-not-secure')
 app.config['MAX_CONTENT_LENGTH'] = 50 * 1024 * 1024  # 50 MB max upload size
 
@@ -26,8 +24,7 @@ ALLOWED_EXTENSIONS = {'mp4', 'mov', 'avi', 'mkv', 'webm'}
 
 def allowed_file(filename):
     """Checks if the file extension is allowed."""
-    return '.' in filename and \
-           filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
+    return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
 @app.route('/')
 def index():
@@ -48,114 +45,74 @@ def convert_video_to_gif():
     if not allowed_file(file.filename):
         return jsonify({'error': 'File type not allowed. Please upload a video file.'}), 400
 
-    if file:
-        video_path = None # Initialize to ensure it exists for the finally block
-        try:
-            # --- Securely save the uploaded video ---
-            filename = secure_filename(file.filename)
-            # Add a timestamp to the filename to prevent overwrites
-            unique_filename = f"{int(time.time())}_{filename}"
-            video_path = os.path.join(app.config['UPLOAD_FOLDER'], unique_filename)
-            file.save(video_path)
+    video_path = None
+    try:
+        filename = secure_filename(file.filename)
+        unique_filename = f"{int(time.time())}_{filename}"
+        video_path = os.path.join(app.config['UPLOAD_FOLDER'], unique_filename)
+        file.save(video_path)
 
-            # --- Get conversion parameters from the form ---
-            start_time = float(request.form.get('start_time', 0))
-            end_time = request.form.get('end_time')
-            fps = int(request.form.get('fps', 10))
+        start_time = float(request.form.get('start_time', 0))
+        end_time_str = request.form.get('end_time')
+        fps = int(request.form.get('fps', 10))
 
-            # --- Convert video to GIF using moviepy ---
-            output_gif_name = os.path.splitext(unique_filename)[0] + '.gif'
-            output_gif_path = os.path.join(app.config['GIF_FOLDER'], output_gif_name)
+        output_gif_name = os.path.splitext(unique_filename)[0] + '.gif'
+        output_gif_path = os.path.join(app.config['GIF_FOLDER'], output_gif_name)
 
-            with VideoFileClip(video_path) as clip:
-                # Set end time to clip duration if not specified or invalid
-                if not end_time or float(end_time) > clip.duration:
-                    end_time = clip.duration
-                else:
-                    end_time = float(end_time)
-                
-                # Ensure start_time is less than end_time and within duration
-                if start_time >= end_time or start_time >= clip.duration:
-                    start_time = 0
+        with VideoFileClip(video_path) as clip:
+            end_time = float(end_time_str) if end_time_str and float(end_time_str) <= clip.duration else clip.duration
+            if start_time >= end_time or start_time >= clip.duration:
+                start_time = 0
 
-                # Create the subclip using the CORRECTED method name
-                subclip = clip.subclipped(start_time, end_time)
-                
-                # Write the GIF file
-                subclip.write_gif(output_gif_path, fps=fps)
-            
-            # --- Return the path to the generated GIF ---
-            gif_url = url_for('static', filename=f'gifs/{output_gif_name}')
-            return jsonify({'gif_url': gif_url})
-
-        except Exception as e:
-            # Log the exception for debugging
-            print(f"An error occurred: {e}")
-            return jsonify({'error': f'An error occurred during conversion: {e}'}), 500
+            subclip = clip.subclipped(start_time, end_time)
+            subclip.write_gif(output_gif_path, fps=fps)
         
-        finally:
-            # Clean up the uploaded video file after conversion or in case of an error
-            if video_path and os.path.exists(video_path):
-                 os.remove(video_path)
+        gif_url = url_for('static', filename=f'gifs/{output_gif_name}')
+        return jsonify({'gif_url': gif_url})
 
+    except Exception as e:
+        app.logger.error(f"An error occurred during conversion: {e}")
+        return jsonify({'error': 'An unexpected error occurred during conversion.'}), 500
+    
+    finally:
+        if video_path and os.path.exists(video_path):
+            os.remove(video_path)
 
-    return jsonify({'error': 'An unexpected error occurred.'}), 500
-
-def cleanup_old_files(age_in_seconds):
-    """Deletes files older than `age_in_seconds` from UPLOAD_FOLDER and GIF_FOLDER."""
-    now = time.time()
-    cutoff = now - age_in_seconds
-    deleted_files_count = 0
-    errors = []
-
-    print(f"--- Cleanup Process Started ---")
-    print(f"Current time (epoch): {now}")
-    print(f"Cutoff time (epoch): {cutoff} (files modified before this will be deleted)")
-    print(f"Attempting to delete files older than {age_in_seconds / 3600:.2f} hours.")
-
-    for folder_path in [app.config['UPLOAD_FOLDER'], app.config['GIF_FOLDER']]:
-        print(f"Checking folder: {folder_path}")
+def cleanup_old_files():
+    """Deletes files older than 1 hour from GIF_FOLDER."""
+    with app.app_context():
+        app.logger.info("--- Running scheduled cleanup for old GIFs ---")
+        now = time.time()
+        one_hour_ago = now - 3600  # 1 hour in seconds
+        
+        folder_path = app.config['GIF_FOLDER']
         try:
             for filename in os.listdir(folder_path):
                 file_path = os.path.join(folder_path, filename)
                 if os.path.isfile(file_path):
                     try:
-                        file_mtime = os.path.getmtime(file_path)
-                        print(f"  File: {filename}, Mod Time: {file_mtime} (Human: {datetime.fromtimestamp(file_mtime).strftime('%Y-%m-%d %H:%M:%S')})")
-                        if file_mtime < cutoff:
-                            print(f"    -> Deleting {filename} as it's older than cutoff.")
+                        if os.path.getmtime(file_path) < one_hour_ago:
                             os.remove(file_path)
-                            deleted_files_count += 1
-                        else:
-                            print(f"    -> Keeping {filename} as it's not older than cutoff.")
+                            app.logger.info(f"Deleted old GIF: {filename}")
                     except Exception as e:
-                        error_msg = f"Error deleting file {file_path}: {e}"
-                        print(error_msg)
-                        errors.append(error_msg)
+                        app.logger.error(f"Error deleting file {file_path}: {e}")
         except Exception as e:
-            error_msg = f"Error accessing folder {folder_path} or listing its files: {e}"
-            print(error_msg)
-            errors.append(error_msg)
-    return deleted_files_count, errors
+            app.logger.error(f"Error accessing folder {folder_path}: {e}")
+    app.logger.info("--- Cleanup complete ---")
 
-@app.route('/cleanup', methods=['POST'])
-def cleanup_files_route():
-    one_hour_in_seconds = 1 * 60 * 60
-    deleted_count, errors = cleanup_old_files(age_in_seconds=one_hour_in_seconds) # Clean files older than 1 hour
-    return jsonify({'message': f'Cleanup complete. Deleted {deleted_count} files.', 'errors': errors})
 
-def scheduled_cleanup():
-    """Wrapper function for APScheduler to call cleanup_old_files."""
-    print("Running scheduled cleanup...")
-    # Ensure app context is available if cleanup_old_files relies on it
-    # (though in this case, it mainly uses app.config which should be fine)
-    with app.app_context():
-        one_hour_in_seconds = 1 * 60 * 60
-        deleted_count, errors = cleanup_old_files(age_in_seconds=one_hour_in_seconds)
-        if errors:
-            print(f"Scheduled cleanup encountered errors: {errors}")
-        else:
-            print(f"Scheduled cleanup complete. Deleted {deleted_count} files.")
+# --- Scheduler Setup ---
+scheduler = BackgroundScheduler(daemon=True)
+# Schedule the cleanup job to run every 1 hour
+scheduler.add_job(cleanup_old_files, 'interval', hours=1)
+scheduler.start()
+
+# --- Graceful Shutdown ---
+# Shut down the scheduler when the app exits
+atexit.register(lambda: scheduler.shutdown())
 
 if __name__ == '__main__':
-    app.run()
+    # Note: Using debug=True will cause the scheduler to run twice.
+    # This is expected behavior with the Flask reloader.
+    # It will function correctly in a production environment (e.g., with Gunicorn).
+    app.run(debug=True, use_reloader=True)
