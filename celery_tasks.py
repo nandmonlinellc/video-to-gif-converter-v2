@@ -48,7 +48,7 @@ def convert_video_to_gif_task(video_path, options):
                 if end_time <= start_time and clip.duration > 0:
                     end_time = clip.duration
 
-            subclip = clip.subclip(start_time, end_time)
+            subclip = clip.subclipped(start_time, end_time)
 
             if all(val is not None and val != '' for val in [crop_x_opt_str, crop_y_opt_str, crop_width_opt_str, crop_height_opt_str]):
                 try:
