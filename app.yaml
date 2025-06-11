@@ -22,7 +22,9 @@ readiness_check:
 
 # Define environment variables. This is the secure way to handle secrets.
 env_variables:
-  FLASK_SECRET_KEY: '42882c490aabd51acd373b253f175ba05de35d845ee478736e3f634ffa0678df' # Replace with a real secret
+  FLASK_SECRET_KEY: "projects/video-to-gif-462512/secrets/flask-secret-key/versions/latest" # Replace video-to-gif-462512 with your project ID if different, and flask-secret-key with your secret ID
+  CELERY_BROKER_URL: 'redis://10.0.0.3:6379/0' # Replace with your actual Memorystore IP and port
+  CELERY_RESULT_BACKEND: 'redis://10.0.0.3:6379/0' # Replace with your actual Memorystore IP and port
 
 # Define the resources for the instance. You can adjust these based on expected load.
 # The 'cpu' and 'memory_gb' settings are crucial for video processing performance.
