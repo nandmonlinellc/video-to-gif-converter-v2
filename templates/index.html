@@ -5,13 +5,13 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Easy GIF Maker - Convert Video to GIF</title>
     
-    <!-- Favicon Links -->
     <link rel="icon" href="{{ url_for('static', filename='favicon.svg') }}" type="image/svg+xml">
     <link rel="apple-touch-icon" href="{{ url_for('static', filename='apple-touch-icon.png') }}">
     <link rel="manifest" href="{{ url_for('static', filename='site.webmanifest') }}">
     
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <!-- Link to the external stylesheet -->
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.6.2/cropper.min.css" rel="stylesheet">
+    
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
     <script src="https://cdn.tailwindcss.com"></script>
 </head>
@@ -27,7 +27,7 @@
             <form id="converter-form" enctype="multipart/form-data">
                 <!-- File Upload Section -->
                 <div class="form-group">
-                    <label for="video-upload" class="form-label">1. Upload Video File</label>
+                    <label class="form-label">1. Upload Video File</label>
                     <div id="drop-zone" class="drop-zone">
                         <div class="flex flex-col items-center justify-center pt-5 pb-6">
                             <svg class="w-10 h-10 mb-3 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-4-4V7a4 4 0 014-4h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V16a4 4 0 01-4 4H7z"></path></svg>
@@ -39,11 +39,26 @@
                     </div>
                 </div>
                 
-                <!-- Video Preview Section -->
+                <!-- Video Preview & Crop Button Section -->
                 <div id="video-preview-container" class="transition-section">
                     <label class="form-label">Video Preview</label>
                     <video id="video-preview" class="w-full rounded-lg" controls></video>
+                    <button type="button" id="init-crop-btn" class="mt-4 px-6 py-2 bg-gray-200 text-gray-700 dark:bg-gray-700 dark:text-gray-300 font-semibold rounded-lg shadow hover:bg-gray-300 dark:hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-gray-400 focus:ring-opacity-50 transition-colors">Visually Crop Video</button>
                 </div>
+                
+                <!-- Cropper Interface Section -->
+                <div id="crop-container" class="transition-section">
+                    <label class="form-label">Crop Video Frame</label>
+                    <div class="w-full bg-gray-900 rounded-lg overflow-hidden">
+                        <img id="crop-image-preview" src="" alt="Video frame for cropping">
+                    </div>
+                </div>
+                
+                <!-- Hidden inputs for crop data -->
+                <input type="hidden" name="crop_x">
+                <input type="hidden" name="crop_y">
+                <input type="hidden" name="crop_width">
+                <input type="hidden" name="crop_height">
 
                 <!-- Conversion Options Section -->
                 <div id="options-container" class="transition-section">
@@ -58,41 +73,78 @@
                             <input type="number" id="end_time" name="end_time" class="form-input" placeholder="e.g., 5" min="0" step="0.1">
                         </div>
                     </div>
-                    <div class="form-group">
-                        <label for="fps" class="form-label">Frames Per Second (FPS)</label>
-                        <select id="fps" name="fps" class="form-input">
-                            <option value="10" selected>10 FPS (Standard)</option>
-                            <option value="15">15 FPS (Smoother)</option>
-                            <option value="20">20 FPS (High Quality)</option>
-                            <option value="24">24 FPS (Cinema Quality)</option>
-                        </select>
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <div class="form-group">
+                            <label for="fps" class="form-label">Frames Per Second</label>
+                            <select id="fps" name="fps" class="form-input">
+                                <option value="10" selected>10 FPS (Standard)</option>
+                                <option value="15">15 FPS (Smoother)</option>
+                                <option value="20">20 FPS (High Quality)</option>
+                                <option value="24">24 FPS (Cinema Quality)</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label for="resize" class="form-label">Resolution</label>
+                            <select id="resize" name="resize" class="form-input">
+                                <option value="original" selected>Original</option>
+                                <option value="480">480px width</option>
+                                <option value="320">320px width</option>
+                            </select>
+                        </div>
+                    </div>
+                     <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <div class="form-group">
+                            <label for="speed" class="form-label">Playback Speed</label>
+                            <select id="speed" name="speed" class="form-input">
+                                <option value="1.0" selected>1x (Normal)</option>
+                                <option value="0.5">0.5x</option>
+                                <option value="1.5">1.5x</option>
+                                <option value="2.0">2.0x</option>
+                            </select>
+                        </div>
                     </div>
                 </div>
 
                 <!-- Submit Button -->
-                <button type="submit" id="submit-btn" class="submit-btn">Convert to GIF</button>
+                <button type="submit" id="submit-btn" class="w-full mt-6 px-8 py-3 bg-blue-600 text-white text-lg font-semibold rounded-lg shadow-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-50 transition-all duration-150 ease-in-out disabled:opacity-50 disabled:cursor-not-allowed">Convert to GIF</button>
             </form>
 
             <!-- Loading & Result Sections -->
-            <div id="loading" class="transition-section text-center">
-                <div class="spinner"></div>
-                <p class="text-gray-600 font-medium">Converting your video... Please wait.</p>
+            <div id="loading" class="transition-section text-center py-10">
+                <div class="w-12 h-12 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mx-auto"></div>
+                <p class="text-gray-600 dark:text-gray-300 font-medium mt-4">Converting your video... Please wait.</p>
             </div>
             
-            <div id="error-message" class="transition-section error-box"></div>
+            <div id="error-message" class="transition-section p-4 my-4 text-sm text-red-700 bg-red-100 rounded-lg dark:bg-gray-800 dark:text-red-400" role="alert"></div>
 
             <div id="gif-container" class="transition-section text-center">
-                <h2 class="text-2xl font-bold text-gray-800 mb-4">Your GIF is Ready! 🎉</h2>
-                <img id="gif-result" src="" alt="Generated GIF" class="w-full rounded-lg shadow-lg">
-                <a id="download-btn" href="" class="download-btn" download="converted.gif">Download GIF</a>
+                <h2 class="text-2xl font-bold text-gray-800 dark:text-gray-100 mb-4">Your GIF is Ready! 🎉</h2>
+                <!-- Wrapper for the GIF image to control its display and provide a background -->
+                <div class="mx-auto mb-4 w-full max-w-xl lg:max-w-2xl bg-gray-100 dark:bg-gray-700 rounded-lg overflow-hidden flex justify-center items-center shadow-lg" style="min-height: 200px; max-height: 70vh;">
+                    <img id="gif-result" src="" alt="Generated GIF" class="max-w-full max-h-full object-contain block rounded-lg">
+                </div>
+                <p id="gif-dimensions" class="mt-2 text-sm text-gray-500 dark:text-gray-400"></p>
+                <a id="download-btn" href="" class="inline-block mt-4 px-8 py-3 bg-green-500 text-white text-lg font-semibold rounded-lg shadow-md hover:bg-green-600 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-opacity-50 transition-all duration-150 ease-in-out" download="converted.gif">Download GIF</a>
             </div>
         </main>
+
+        <!-- Recent Creations Section -->
+        <div id="history-container" class="transition-section">
+             <div class="flex justify-between items-center mb-4">
+                <h3 class="text-xl font-bold text-gray-800">Recent Creations</h3>
+                <button id="clear-history-btn" class="text-sm text-blue-600 hover:underline">Clear History</button>
+            </div>
+            <div id="history-list" class="space-y-3">
+                <!-- History items will be injected here by JavaScript -->
+            </div>
+        </div>
         
         <footer class="text-center mt-8 text-gray-500 text-sm">
-            <p>Powered by Python & MoviePy</p>
+            <p>Powered by easygifmaker.com</p>
         </footer>
     </div>
 
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.6.2/cropper.min.js"></script>
     <script src="{{ url_for('static', filename='js/script.js') }}"></script>
 </body>
 </html>

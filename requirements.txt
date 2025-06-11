@@ -2,3 +2,5 @@ Flask==3.1.1
 moviepy==2.2.1
 gunicorn==23.0.0
 APScheduler==3.11.0
+celery==5.5.3
+redis==6.2.0

@@ -4,6 +4,38 @@ body {
     -moz-osx-font-smoothing: grayscale;
 }
 
+/* In static/css/style.css (if not already present and handled differently) */
+#video-preview-container, 
+#crop-container, 
+#options-container, 
+#loading, 
+#gif-container, 
+#error-message, 
+#history-container {
+    display: none; /* Initially hidden */
+    opacity: 0;
+    transition: opacity 0.3s ease-in-out; /* Basic fade transition */
+}
+
+#video-preview-container.visible, 
+#crop-container.visible, 
+#options-container.visible, 
+#loading.visible, 
+#gif-container.visible, 
+#error-message.visible,
+#history-container.visible {
+    display: block; /* Or flex, grid, etc. as appropriate for the element */
+    opacity: 1;
+}
+
+/* Adjust 'display' for specific elements if 'block' isn't suitable */
+#loading.visible, #gif-container.visible {
+    display: block; /* Or 'flex; flex-direction: column; align-items: center;' if needed */
+}
+
+
+
+
 .card {
     background: white;
     padding: 2rem;
@@ -138,4 +170,21 @@ body {
 .drop-zone.dragover {
     border-color: #3b82f6;
     background-color: #eff6ff;
+}
+/* New style for the optional crop button */
+.secondary-btn {
+    width: 100%;
+    padding: 0.75rem;
+    background-color: #f3f4f6; /* bg-gray-100 */
+    color: #1f2937; /* text-gray-800 */
+    font-weight: 600;
+    border-radius: 0.5rem;
+    border: 1px solid #d1d5db; /* border-gray-300 */
+    cursor: pointer;
+    transition: background-color 0.2s, border-color 0.2s;
+}
+
+.secondary-btn:hover {
+    background-color: #e5e7eb; /* hover:bg-gray-200 */
+    border-color: #9ca3af; /* hover:border-gray-400 */
 }
