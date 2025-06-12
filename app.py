@@ -74,7 +74,10 @@ def start_conversion_task():
             'crop_width': request.form.get('crop_width'),
             'crop_height': request.form.get('crop_height'),
             # Pass the GIF folder path to the task
-            'gif_folder': app.config['GIF_FOLDER'] 
+            'gif_folder': app.config['GIF_FOLDER'],
+            'text_overlay': request.form.get('text-overlay'),
+            'text_size': request.form.get('text-size'),
+            'text_color': request.form.get('text-color'),
         }
 
         task = convert_video_to_gif_task.delay(video_path, options)

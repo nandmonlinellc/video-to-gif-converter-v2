@@ -28,6 +28,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const historyContainer = document.getElementById('history-container');
     const historyList = document.getElementById('history-list');
     const clearHistoryBtn = document.getElementById('clear-history-btn');
+    const textColorHexInput = document.getElementById('text-color-hex'); // For hex color input
+    
 
     const MAX_HISTORY_ITEMS = 5;
 
@@ -163,6 +165,13 @@ document.addEventListener('DOMContentLoaded', () => {
                 });
             }
         });
+    }
+
+    // Link color picker and hex input for text color
+    const textColorPicker = document.getElementById('text-color');
+    if (textColorPicker && textColorHexInput) {
+        textColorPicker.addEventListener('input', (e) => textColorHexInput.value = e.target.value);
+        textColorHexInput.addEventListener('input', (e) => textColorPicker.value = e.target.value);
     }
     
     // --- Polling and Form Submit Logic ---

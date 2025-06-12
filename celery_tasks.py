@@ -1,8 +1,9 @@
 # In celery_tasks.py
 import os
 from celery import Celery
-from moviepy import VideoFileClip, vfx
+from moviepy import VideoFileClip, vfx, TextClip, CompositeVideoClip
 from google.cloud import storage
+
 
 # --- Configuration ---
 BUCKET_NAME = "video-to-gif-462512-gifs"
@@ -98,7 +99,25 @@ def convert_video_to_gif_task(self, video_path, options):
             except (ValueError, TypeError):
                 actual_fps = 10
             # Your video processing logic ends here
-            
+            # Get text options from the frontend
+            text_overlay = options.get('text_overlay')
+            text_size = int(options.get('text_size', 24))
+            text_color = options.get('text_color', 'white')
+
+            if text_overlay:
+                # Create a TextClip
+                # Use the explicit path to the Liberation Sans font installed in the Dockerfile
+                txt_clip = TextClip(text_overlay, font_size=text_size, color=text_color, font='Arial')
+
+                # Position the text clip (e.g., at the center)
+                # You can also use positions like ('center', 'top'), ('left', 'bottom'), etc.
+                txt_clip = txt_clip.set_position('center').set_duration(subclip.duration)
+
+                # Overlay the text on the video
+                subclip = CompositeVideoClip([subclip, txt_clip])
+
+
+
             subclip.write_gif(temp_gif_path, fps=actual_fps)
 
         # Upload the generated GIF to Google Cloud Storage
