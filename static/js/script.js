@@ -178,8 +178,18 @@ document.addEventListener('DOMContentLoaded', () => {
                     submitBtn.disabled = false;
                     submitBtn.textContent = 'Convert to GIF';
                     
+                    // Set the image source to the direct GCS URL for viewing
                     gifResult.src = data.gif_url;
-                    downloadBtn.href = data.gif_url;
+                    
+                    // --- THIS IS THE MODIFIED PART ---
+                    // Extract the filename from the full GCS URL
+                    const gcsUrl = new URL(data.gif_url);
+                    const filename = gcsUrl.pathname.split('/').pop();
+
+                    // Point the download button to your new Flask download route
+                    downloadBtn.href = `/download_gif/${filename}`; 
+                    // --- END OF MODIFIED PART ---
+                    
                     gifDimensions.textContent = `Dimensions: ${data.width}px x ${data.height}px`;
                     showElement(gifContainer);
                     

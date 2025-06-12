@@ -1,5 +1,5 @@
 import os
-from flask import Flask, render_template, request, jsonify, url_for, send_from_directory # 👈 Import send_from_directory
+from flask import Flask, render_template, request, jsonify, url_for, send_from_directory , Response # 👈 Import send_from_directory
 from werkzeug.utils import secure_filename
 from werkzeug.middleware.proxy_fix import ProxyFix
 from apscheduler.schedulers.background import BackgroundScheduler
@@ -7,6 +7,7 @@ import atexit
 from celery_tasks import convert_video_to_gif_task, celery_app
 from celery.result import AsyncResult
 import time
+import requests
 
 app = Flask(__name__)
 
@@ -126,6 +127,37 @@ scheduler = BackgroundScheduler(daemon=True)
 scheduler.add_job(cleanup_old_files, 'interval', hours=24)
 scheduler.start()
 atexit.register(lambda: scheduler.shutdown())
+
+
+BUCKET_NAME = "video-to-gif-462512-gifs" # Make sure this matches your bucket name
+
+@app.route('/download_gif/<string:filename>')
+def download_gif(filename):
+    """
+    Downloads a file from GCS and serves it to the user.
+    This acts as a proxy to enforce the download.
+    """
+    # Construct the public URL of the object in the bucket
+    gcs_url = f"https://storage.googleapis.com/{BUCKET_NAME}/{filename}"
+
+    try:
+        # Fetch the file content from the public URL
+        r = requests.get(gcs_url, stream=True)
+
+        # Check if the request to GCS was successful
+        if r.status_code != 200:
+            return "File not found or error fetching file.", 404
+
+        # Create a Flask response object with the file content
+        return Response(
+            r.content,
+            mimetype='image/gif',
+            headers={'Content-Disposition': f'attachment; filename={filename}'}
+        )
+    except Exception as e:
+        app.logger.error(f"Error during download proxy: {e}")
+        return "An error occurred.", 500
+
 
 if __name__ == '__main__':
     app.run(debug=True, use_reloader=False)

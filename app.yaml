@@ -1,10 +1,15 @@
-# app.yaml
+# In app.yaml
+
 runtime: custom
 env: flex
 
-# This setting is important for CPU-intensive tasks like video conversion.
-# It ensures that requests don't time out during the conversion process.
-# For longer videos, you might need to increase this.
+# This connects App Engine to your VPC network
+network:
+  name: default
+
+vpc_access_connector:
+  name: "projects/video-to-gif-462512/locations/us-central1/connectors/vpc-connector"
+
 liveness_check:
   path: "/"
   check_interval_sec: 30
@@ -18,20 +23,16 @@ readiness_check:
   timeout_sec: 10
   failure_threshold: 2
   success_threshold: 2
-  app_start_timeout_sec: 1800 # 30 minutes to allow for initial setup and cold starts
+  app_start_timeout_sec: 1800
 
-# Define environment variables. This is the secure way to handle secrets.
+# Define environment variables with the CORRECT Redis IP
 env_variables:
-  FLASK_SECRET_KEY: "projects/video-to-gif-462512/secrets/flask-secret-key/versions/latest" # Replace video-to-gif-462512 with your project ID if different, and flask-secret-key with your secret ID
-  CELERY_BROKER_URL: 'redis://10.0.0.3:6379/0' # Replace with your actual Memorystore IP and port
-  CELERY_RESULT_BACKEND: 'redis://10.0.0.3:6379/0' # Replace with your actual Memorystore IP and port
+  FLASK_SECRET_KEY: "projects/video-to-gif-462512/secrets/flask-secret-key/versions/latest"
+  # 👇 PASTE YOUR NEW REDIS IP ADDRESS HERE 👇
+  CELERY_BROKER_URL: 'redis://10.124.0.3:6379/0' 
+  CELERY_RESULT_BACKEND: 'redis://10.124.0.3:6379/0'
 
-# Define the resources for the instance. You can adjust these based on expected load.
-# The 'cpu' and 'memory_gb' settings are crucial for video processing performance.
 resources:
   cpu: 2
   memory_gb: 4
   disk_size_gb: 20
-
-# Network settings to allow all traffic
-network: {}
