@@ -7,6 +7,7 @@ import atexit
 from celery_tasks import convert_video_to_gif_task, celery_app
 from celery.result import AsyncResult
 import time
+from google.cloud import storage # Import GCS client
 import requests
 
 app = Flask(__name__)
@@ -28,6 +29,25 @@ os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 os.makedirs(app.config['GIF_FOLDER'], exist_ok=True)
 
 ALLOWED_EXTENSIONS = {'mp4', 'mov', 'avi', 'mkv', 'webm'}
+BUCKET_NAME = "video-to-gif-462512-gifs" # Ensure this matches your bucket name
+VIDEO_UPLOAD_GCS_PREFIX = "video_uploads/"
+
+def upload_to_gcs_from_app(local_file_path, destination_blob_name):
+    """Uploads a file to the bucket from the Flask app."""
+    try:
+        storage_client = storage.Client()
+        bucket = storage_client.bucket(BUCKET_NAME)
+        blob = bucket.blob(destination_blob_name)
+
+        blob.upload_from_filename(local_file_path)
+        app.logger.info(f"Successfully uploaded {local_file_path} to GCS as {destination_blob_name}")
+        return destination_blob_name # Return the blob name
+    except Exception as e:
+        app.logger.error(f"Error uploading {local_file_path} to GCS: {e}")
+        # Import traceback and log it for more details if needed
+        # import traceback
+        # app.logger.error(traceback.format_exc())
+        return None
 
 def allowed_file(filename):
     """Checks if the file extension is allowed."""
@@ -59,10 +79,21 @@ def start_conversion_task():
     try:
         filename = secure_filename(file.filename)
         unique_filename = f"{os.urandom(8).hex()}_{filename}"
-        # This will now correctly save to /tmp/<unique_filename>
-        video_path = os.path.join(app.config['UPLOAD_FOLDER'], unique_filename)
-        file.save(video_path)
+        
+        # Save to local /tmp first
+        local_temp_video_path = os.path.join(app.config['UPLOAD_FOLDER'], unique_filename)
+        file.save(local_temp_video_path)
+        app.logger.info(f"Video saved locally to {local_temp_video_path}")
 
+        # Upload to GCS
+        gcs_video_blob_name = VIDEO_UPLOAD_GCS_PREFIX + unique_filename
+        uploaded_blob_name = upload_to_gcs_from_app(local_temp_video_path, gcs_video_blob_name)
+
+        # Clean up local temp video file from Flask instance
+        if os.path.exists(local_temp_video_path):
+            os.remove(local_temp_video_path)
+            app.logger.info(f"Cleaned up local video {local_temp_video_path}")
+        
         options = {
             'start_time': float(request.form.get('start_time', 0)),
             'end_time': request.form.get('end_time'),
@@ -80,12 +111,16 @@ def start_conversion_task():
             'text_color': request.form.get('text-color'),
         }
 
-        task = convert_video_to_gif_task.delay(video_path, options)
+        if not uploaded_blob_name:
+            app.logger.error("Failed to upload video to GCS. Task not submitted.")
+            return jsonify({'error': 'Failed to upload video to cloud storage.'}), 500
+
+        task = convert_video_to_gif_task.delay(uploaded_blob_name, options) # Pass GCS blob name
         
         return jsonify({'task_id': task.id})
 
     except Exception as e:
-        app.logger.error(f"An error occurred during task submission: {e}")
+        app.logger.error(f"An error occurred during file upload or task submission: {e}")
         return jsonify({'error': 'An unexpected error occurred during file upload.'}), 500
 
 @app.route('/status/<task_id>')
@@ -131,8 +166,6 @@ scheduler.add_job(cleanup_old_files, 'interval', hours=24)
 scheduler.start()
 atexit.register(lambda: scheduler.shutdown())
 
-
-BUCKET_NAME = "video-to-gif-462512-gifs" # Make sure this matches your bucket name
 
 @app.route('/download_gif/<string:filename>')
 def download_gif(filename):
