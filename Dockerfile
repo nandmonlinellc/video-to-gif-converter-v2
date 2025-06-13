@@ -19,6 +19,8 @@ RUN set -eux; \
         ffmpeg \
         supervisor \
         fonts-dejavu-core \
+        fonts-liberation2 \
+        ttf-mscorefonts-installer \
         imagemagick \
         fontconfig \
         wget \

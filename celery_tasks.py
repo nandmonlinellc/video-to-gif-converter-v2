@@ -4,6 +4,7 @@ import traceback # Import traceback
 from celery import Celery
 from moviepy import VideoFileClip, vfx, TextClip, CompositeVideoClip
 from google.cloud import storage
+from PIL import ImageFont # For checking font existence with Pillow
 
 
 # --- Configuration ---
@@ -51,6 +52,28 @@ def _delete_from_gcs(blob_name):
         print(f"Successfully deleted {blob_name} from GCS.")
     except Exception as e:
         print(f"Error deleting {blob_name} from GCS: {e}\n{traceback.format_exc()}")
+
+def get_available_font(preferred_fonts):
+    """
+    Tries to load a font from a list of preferred fonts.
+    Returns the path/name of the first font that can be loaded by Pillow.
+    """
+    for font_choice in preferred_fonts:
+        try:
+            ImageFont.truetype(font_choice, size=10) # Try to load with a dummy size
+            print(f"Font '{font_choice}' is available.")
+            return font_choice
+        except (IOError, OSError): # Catch OSError as it's the base for IOError
+            print(f"Font '{font_choice}' not found or cannot be opened. Trying next.")
+        except Exception as e: # Catch any other PIL/FreeType specific errors
+            print(f"Error checking font '{font_choice}': {e}. Trying next.")
+    print("WARNING: No preferred fonts found. TextClip will use Pillow's default or may fail.")
+    return "sans-serif" # A very generic fallback, Pillow might handle this.
+
+def is_imagemagick_available():
+    """Check if ImageMagick's 'convert' command is available on the system."""
+    from shutil import which
+    return which('convert') is not None
 
 @celery_app.task(bind=True)
 def convert_video_to_gif_task(self, gcs_video_blob_name, options):
@@ -128,28 +151,59 @@ def convert_video_to_gif_task(self, gcs_video_blob_name, options):
                 actual_fps = 10
             # Your video processing logic ends here
             # Get text options from the frontend
-            text_overlay = options.get('text_overlay')
-            text_size = int(options.get('text_size', 24))
-            text_color = options.get('text_color', 'white')
-
+            text_overlay = options.get('text_overlay') # Corrected key
             if text_overlay:
+                print(f"Text overlay logic triggered for text: '{text_overlay}'")
                 try:
-                    # Create a TextClip
-                    # Use the explicit path to the Liberation Sans font installed in the Dockerfile
-                    # If 'Arial' is not found, ImageMagick (used by moviepy) might fail.
-                    # Ensure the font 'Arial' is available in your execution environment (e.g., Docker container).
-                    self.update_state(state='PROGRESS', meta={'status': 'Creating text overlay...'})
-                    txt_clip = TextClip(text=text_overlay, font_size=text_size, color=text_color, font='Arial') # Specify a font known to be available or install one
+                    text_size = int(options.get('text_size', 24)) # Corrected key
+                    text_color = options.get('text_color', 'white') # Corrected key
+                    
+                    font_preferences = [
+                        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", # Try non-bold DejaVu first
+                        "/usr/share/fonts/truetype/liberation/LiberationSans.ttf", # Try non-bold Liberation
+                        "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf", # Explicit path for Liberation Sans Bold
+                        "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", # Explicit path for DejaVu Sans Bold
+                        "Arial",  # Should be available if ttf-mscorefonts-installer worked
+                        "Liberation Sans Bold", # From fonts-liberation2
+                        "DejaVu Sans Bold", # Name for dejavu
+                        "/Library/Fonts/Arial.ttf",  # macOS default
+                        "/System/Library/Fonts/Supplemental/Arial.ttf",  # macOS supplemental
+                        "/usr/share/fonts/truetype/freefont/FreeSans.ttf",  # Linux
+                    ]
+                    selected_font = get_available_font(font_preferences)
 
-                    # Position the text clip (e.g., at the center)
-                    txt_clip = txt_clip.with_position('center').with_duration(subclip.duration)
+                    if not is_imagemagick_available():
+                        print("WARNING: ImageMagick is not available. TextClip may fail if using method='caption' or default.")
 
-                    # Overlay the text on the video
-                    subclip = CompositeVideoClip([subclip, txt_clip])
+                    print(f"Attempting to create TextClip with: text='{text_overlay}', font='{selected_font}', size={text_size}, color='{text_color}'")
+                    try:
+                        txt_clip = TextClip(
+                            text=text_overlay,
+                            font=selected_font,
+                            font_size=text_size,
+                            color=text_color,
+                            bg_color=None  # Transparent background
+                        )
+                    except Exception as textclip_e:
+                        print(f"ERROR: TextClip creation failed with font '{selected_font}'. Trying fallback font 'DejaVu-Sans'. Error: {textclip_e}")
+                        try:
+                            txt_clip = TextClip(
+                                text=text_overlay,
+                                font="Arial",
+                                font_size=text_size,
+                                color=text_color,
+                                bg_color=None
+                            )
+                        except Exception as fallback_e:
+                            print(f"CRITICAL: Fallback TextClip creation failed. No text overlay will be applied. Error: {fallback_e}")
+                            txt_clip = None
+                    if txt_clip:
+                        txt_clip = txt_clip.with_position('center').with_duration(subclip.duration)
+                        subclip = CompositeVideoClip([subclip, txt_clip])
+                        print(f"Successfully applied text overlay: '{text_overlay}' at position 'center' with font '{selected_font}'")
                 except Exception as text_e:
-                    error_details = f"Error during text overlay creation: {str(text_e)}\n{traceback.format_exc()}"
-                    return {'status': 'FAILURE', 'error': error_details}
-
+                    print(f"CRITICAL: Failed to create or apply text clip for '{text_overlay}'. Error: {text_e}. Skipping text overlay.")
+                    print(f"Traceback: {traceback.format_exc()}")
             subclip.write_gif(temp_gif_path, fps=actual_fps)
 
         # Upload the generated GIF to Google Cloud Storage

@@ -7,3 +7,7 @@ redis==6.2.0
 gevent==25.5.1
 google-cloud-storage==3.1.0
 requests==2.32.4
+Pillow>=9.0.0
+# ImageMagick is a system dependency, not a pip package, but note it here for deployment
+# RUN apt-get install -y imagemagick   # For Docker/Ubuntu
+# Or: brew install imagemagick         # For macOS
