@@ -174,6 +174,31 @@ def cleanup_old_files():
 
 scheduler = BackgroundScheduler(daemon=True)
 scheduler.add_job(cleanup_old_files, 'interval', hours=24)
+
+def cleanup_old_gcs_gifs():
+    """Delete GIFs older than 24 hours from the GCS bucket."""
+    from google.cloud import storage
+    import datetime
+    BUCKET_NAME = "video-to-gif-462512-gifs"
+    try:
+        storage_client = storage.Client()
+        bucket = storage_client.bucket(BUCKET_NAME)
+        now = datetime.datetime.utcnow().replace(tzinfo=datetime.timezone.utc)
+        cutoff = now - datetime.timedelta(hours=24)
+        deleted_count = 0
+        for blob in bucket.list_blobs():
+            if blob.name.lower().endswith('.gif'):
+                if blob.time_created < cutoff:
+                    blob.delete()
+                    app.logger.info(f"Deleted old GCS GIF: {blob.name}")
+                    deleted_count += 1
+        app.logger.info(f"GCS GIF cleanup complete. Deleted {deleted_count} old GIFs.")
+    except Exception as e:
+        app.logger.error(f"Error during GCS GIF cleanup: {e}")
+
+# Schedule GCS cleanup every 24 hours
+scheduler.add_job(cleanup_old_gcs_gifs, 'interval', hours=24)
+
 scheduler.start()
 atexit.register(lambda: scheduler.shutdown())
 
@@ -216,6 +241,10 @@ def about_page():
 @app.route('/privacy')
 def privacy_page():
     return render_template('privacy.html')
+
+@app.route('/sitemap.xml')
+def sitemap():
+    return send_from_directory(app.root_path, 'sitemap.xml', mimetype='application/xml')
 
 
 if __name__ == '__main__':
