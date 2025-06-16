@@ -205,6 +205,18 @@ def download_gif(filename):
         app.logger.error(f"Error during download proxy: {e}")
         return "An error occurred.", 500
 
+@app.route('/help')
+def help_page():
+    return render_template('help.html')
+
+@app.route('/about')
+def about_page():
+    return render_template('about.html')
+
+@app.route('/privacy')
+def privacy_page():
+    return render_template('privacy.html')
+
 
 if __name__ == '__main__':
     app.run(debug=True, use_reloader=False)
