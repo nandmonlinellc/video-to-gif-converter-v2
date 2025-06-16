@@ -162,8 +162,7 @@ def convert_video_to_gif_task(self, gcs_video_blob_name, options):
             except (ValueError, TypeError):
                 actual_fps = 10
             # Your video processing logic ends here
-            # Get text options from the frontend
-            # --- Simplified Text Overlay (Best Practices) ---
+            # =================== FIX FOR TEXT OVERLAY START ===================
             text_overlay = options.get('text_overlay')
             if text_overlay:
                 try:
@@ -180,56 +179,91 @@ def convert_video_to_gif_task(self, gcs_video_blob_name, options):
                     text_align = options.get('text_align') or options.get('text-align') or 'center'
                     horizontal_align = options.get('horizontal_align') or options.get('horizontal-align') or 'center'
                     vertical_align = options.get('vertical_align') or options.get('vertical-align') or 'center'
+                    text_position = (options.get('text_position') or options.get('text-position') or 'center').lower()
 
-                    print(f"[DEBUG] Text overlay options: font={text_font}, size={text_font_size}, color={text_color}, bg_color={text_bg_color} (type: {type(text_bg_color)}), align={text_align}")
+                    # Map UI text position to MoviePy position tuple
+                    position_map = {
+                        'center': ('center', 'center'),
+                        'top': ('center', 'top'),
+                        'bottom': ('center', 'bottom'),
+                        'left': ('left', 'center'),
+                        'right': ('right', 'center'),
+                        'top-left': ('left', 'top'),
+                        'top-right': ('right', 'top'),
+                        'bottom-left': ('left', 'bottom'),
+                        'bottom-right': ('right', 'bottom'),
+                    }
+                    mp_position = position_map.get(text_position, ('center', 'center'))
 
-                    font_preferences = [
+                    # Font handling: try to resolve font name to a file, fallback to bundled DejaVuSans.ttf
+                    font_preferences = []
+                    if text_font:
+                        font_preferences.append(text_font)
+                    font_preferences += [
                         "/Library/Fonts/Roboto-Regular.ttf",
                         "/usr/share/fonts/truetype/roboto/Roboto-Regular.ttf",
                         "/Library/Fonts/Arial.ttf",
                         "arial",
+                        os.path.join(os.path.dirname(__file__), "DejaVuSans.ttf"),
                     ]
                     font_path = get_available_font(font_preferences)
 
+                    # Use method='caption' for all overlays, with calculated size and no extra newlines
+                    method = 'caption'
+                    lines = text_overlay.count('\n') + 1
+                    # For single-line: at least 2x font size + margin; for multiline: 1.5x font size per line + margin
+                    if lines == 1:
+                        box_height = int(text_font_size * 2.2) + 12
+                    else:
+                        box_height = int(text_font_size * lines * 1.5) + 16
+                    # Cap box height to 80% of video height
+                    box_height = min(box_height, int(subclip.h * 0.8))
+                    size = (int(subclip.w * 0.96), box_height)
+                    padded_text = text_overlay  # No extra newlines
+                    print(f"[DEBUG] Text overlay: font_path={font_path}, method={method}, size={size}, position={mp_position}, vertical_align=center, bg_color={text_bg_color}")
+
                     txt_clip = None
                     try:
-                        print(f"[INFO] Trying TextClip with method='caption', width={subclip.w}")
-                        txt_clip = TextClip(
-                            text=text_overlay,
-                            font=font_path,
-                            font_size=text_font_size,
-                            color=text_color,
-                            bg_color=text_bg_color,
-                            method='label',
-                            size=(None, None),
-                            text_align=text_align,
-                            horizontal_align=horizontal_align,
-                            vertical_align=vertical_align,
-                        ).with_position(("center", "center")).with_duration(subclip.duration)
+                        if method == 'caption':
+                            txt_clip = TextClip(
+                                text=padded_text,
+                                font=font_path,
+                                font_size=text_font_size,
+                                color=text_color,
+                                bg_color=text_bg_color,
+                                method=method,
+                                size=size,
+                                text_align=text_align,
+                                horizontal_align=horizontal_align,
+                                vertical_align='center',
+                            ).with_position(mp_position).with_duration(subclip.duration)
+                        else:
+                            txt_clip = TextClip(
+                                text=padded_text,
+                                font=font_path,
+                                font_size=text_font_size,
+                                color=text_color,
+                                bg_color=text_bg_color,
+                                method=method,
+                                text_align=text_align,
+                                horizontal_align=horizontal_align,
+                                vertical_align='center',
+                            ).with_position(mp_position).with_duration(subclip.duration)
+                        subclip = CompositeVideoClip([subclip, txt_clip])
+                        print(f"[INFO] Text overlay applied successfully.")
                     except Exception as e:
-                        print(f"[WARN] TextClip with method='caption' failed: {e}\nTrying method='label'...")
-                        txt_clip = TextClip(
-                            text=text_overlay,
-                            font=font_path,
-                            font_size=text_font_size,
-                            color=text_color,
-                            bg_color=text_bg_color,
-                            method='label',
-                            text_align=text_align,
-                            horizontal_align=horizontal_align,
-                            vertical_align=vertical_align,
-                        ).with_position(("center", "center")).with_duration(subclip.duration)
-
-                    subclip = CompositeVideoClip([subclip, txt_clip])
-                    print(f"[INFO] Text overlay applied successfully.")
+                        print(f"[ERROR] Failed to apply text overlay: {e}")
+                        print(traceback.format_exc())
                 except Exception as e:
-                    print(f"[ERROR] Failed to apply text overlay: {e}")
+                    print(f"[ERROR] Text overlay logic failed: {e}")
                     print(traceback.format_exc())
+            # =================== FIX FOR TEXT OVERLAY END =====================
 
-            # After all processing and text overlay, write the GIF file
-            print(f"[DEBUG] Writing GIF to {temp_gif_path} with fps={actual_fps}")
+            final_width = subclip.w
+            final_height = subclip.h
+            actual_fps = int(options.get('fps', 10))
+
             subclip.write_gif(temp_gif_path, fps=actual_fps)
-            print(f"[DEBUG] GIF written to {temp_gif_path}")
 
         # Upload the generated GIF to Google Cloud Storage
         # Note: The GIF name in GCS should not have any prefix if your download_gif route expects that.
