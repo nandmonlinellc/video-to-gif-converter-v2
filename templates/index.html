@@ -103,7 +103,7 @@
                             </select>
                         </div>
                     </div>
-                    <div class="mt-6 pt-4 border-t border-gray-200">
+                    <div class="mt-6 pt-6 border-t border-gray-200 dark:border-gray-700">
                         <h3 class="form-label font-medium text-md mb-3">Add Text Overlay (Optional)</h3>
                         <div class="form-group">
                             <label for="text-overlay" class="form-label text-sm">Text</label>
@@ -116,10 +116,63 @@
                             </div>
                             <div class="form-group">
                                 <label for="text-color" class="form-label text-sm">Font Color</label>
-                                <!-- Ensure the input type color provides a good UX or consider a text input for hex codes -->
                                 <div class="flex items-center">
                                     <input type="color" id="text-color" name="text-color" value="#FFFFFF" class="h-10 w-10 p-1 border border-gray-300 rounded-md cursor-pointer">
                                     <input type="text" id="text-color-hex" value="#FFFFFF" class="form-input ml-2" placeholder="e.g. #FFFFFF" oninput="document.getElementById('text-color').value = this.value">
+                                </div>
+                            </div>
+                        </div>
+                        <!-- Advanced Text Options Toggle -->
+                        <button type="button" id="toggle-advanced-text" class="mt-4 flex items-center text-blue-600 hover:underline focus:outline-none">
+                            <span>Show Advanced Text Options</span>
+                            <svg id="advanced-arrow" class="ml-2 w-4 h-4 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
+                        </button>
+                        <div id="advanced-text-options" class="hidden mt-4 space-y-4">
+                            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                <div class="form-group">
+                                    <label for="font-style" class="form-label text-sm">Font Family</label>
+                                    <select id="font-style" name="font-style" class="form-input">
+                                        <option value="Roboto">Roboto</option>
+                                        <option value="Arial">Arial</option>
+                                        <option value="DejaVuSans">DejaVu Sans</option>
+                                        <option value="Helvetica">Helvetica</option>
+                                        <option value="Times New Roman">Times New Roman</option>
+                                        <option value="Courier New">Courier New</option>
+                                    </select>
+                                </div>
+                                <div class="form-group">
+                                    <label for="text-position" class="form-label text-sm">Text Position</label>
+                                    <select id="text-position" name="text-position" class="form-input">
+                                        <option value="center">Center</option>
+                                        <option value="top">Top</option>
+                                        <option value="bottom">Bottom</option>
+                                        <option value="left">Left</option>
+                                        <option value="right">Right</option>
+                                        <option value="top-left">Top Left</option>
+                                        <option value="top-right">Top Right</option>
+                                        <option value="bottom-left">Bottom Left</option>
+                                        <option value="bottom-right">Bottom Right</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                <div class="form-group">
+                                    <label for="text-bg-color" class="form-label text-sm">Background Color</label>
+                                    <div class="flex items-center">
+                                        <input type="color" id="text-bg-color" name="text-bg-color" value="#000000" class="h-10 w-10 p-1 border border-gray-300 rounded-md cursor-pointer">
+                                        <input type="text" id="text-bg-color-hex" value="#000000" class="form-input ml-2" placeholder="#000000">
+                                        <label class="ml-3 flex items-center text-xs"><input type="checkbox" id="text-bg-color-none"> No Background</label>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                <div class="form-group">
+                                    <label for="text-align" class="form-label text-sm">Text Alignment</label>
+                                    <select id="text-align" name="text-align" class="form-input">
+                                        <option value="center">Center</option>
+                                        <option value="left">Left</option>
+                                        <option value="right">Right</option>
+                                    </select>
                                 </div>
                             </div>
                         </div>

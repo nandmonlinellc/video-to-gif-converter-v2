@@ -20,6 +20,7 @@ RUN set -eux; \
         supervisor \
         fonts-dejavu-core \
         fonts-liberation2 \
+        fonts-roboto-unhinted \
         ttf-mscorefonts-installer \
         imagemagick \
         fontconfig \
@@ -47,6 +48,7 @@ COPY supervisord.conf /etc/supervisor/conf.d/supervisord.conf
 
 RUN chown -R appuser:appgroup /etc/supervisor/conf.d/supervisord.conf
 RUN chown -R appuser:appgroup /app
+
 
 USER appuser
 

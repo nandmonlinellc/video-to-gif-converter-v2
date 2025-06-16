@@ -173,7 +173,48 @@ document.addEventListener('DOMContentLoaded', () => {
         textColorPicker.addEventListener('input', (e) => textColorHexInput.value = e.target.value);
         textColorHexInput.addEventListener('input', (e) => textColorPicker.value = e.target.value);
     }
-    
+    // Advanced: sync color/hex for bg
+    const textBgColorPicker = document.getElementById('text-bg-color');
+    const textBgColorHex = document.getElementById('text-bg-color-hex');
+    if (textBgColorPicker && textBgColorHex) {
+        textBgColorPicker.addEventListener('input', (e) => textBgColorHex.value = e.target.value);
+        textBgColorHex.addEventListener('input', (e) => textBgColorPicker.value = e.target.value);
+    }
+
+    // Handle 'No Background' checkboxes
+    const textBgColorNone = document.getElementById('text-bg-color-none');
+    if (textBgColorNone && textBgColorPicker && textBgColorHex) {
+        textBgColorNone.addEventListener('change', function() {
+            if (this.checked) {
+                textBgColorPicker.setAttribute('disabled', 'disabled');
+                textBgColorHex.setAttribute('disabled', 'disabled');
+            } else {
+                textBgColorPicker.removeAttribute('disabled');
+                textBgColorHex.removeAttribute('disabled');
+            }
+        });
+    }
+    // On form submit, set value to 'none' if any 'none' checkbox is checked
+    if (form) {
+        form.addEventListener('submit', function() {
+            if (textBgColorNone && textBgColorNone.checked) {
+                // Instead of setting the color input value to 'none', just disable it and set the form value
+                const bgColorInput = form.querySelector('[name="text-bg-color"]');
+                const bgColorHexInput = form.querySelector('[name="text-bg-color-hex"]');
+                if (bgColorInput) bgColorInput.value = '#000000'; // fallback to valid color
+                if (bgColorHexInput) bgColorHexInput.value = '#000000'; // fallback to valid color
+                // Set the value to 'none' only in the form data, not the input field
+                if (bgColorInput) bgColorInput.setAttribute('data-none', 'true');
+                if (bgColorHexInput) bgColorHexInput.setAttribute('data-none', 'true');
+            } else {
+                const bgColorInput = form.querySelector('[name="text-bg-color"]');
+                const bgColorHexInput = form.querySelector('[name="text-bg-color-hex"]');
+                if (bgColorInput) bgColorInput.removeAttribute('data-none');
+                if (bgColorHexInput) bgColorHexInput.removeAttribute('data-none');
+            }
+        });
+    }
+
     // --- Polling and Form Submit Logic ---
     function pollTaskStatus(taskId) {
         const interval = setInterval(async () => {
@@ -261,6 +302,64 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
+    // --- Improved Upload Button Logic ---
+    // --- Fix for Choose Video File Button and Fallback ---
+    const chooseFileBtn = document.getElementById('choose-file-btn');
+    const videoUploadFallback = document.getElementById('video-upload-fallback');
+    if (chooseFileBtn && videoUpload) {
+        chooseFileBtn.addEventListener('click', () => videoUpload.click());
+    }
+    if (videoUploadFallback && videoUpload) {
+        // Only show fallback if main file input is not supported or unavailable
+        if (!window.File || !window.FileReader || !window.FileList || !window.Blob) {
+            videoUploadFallback.style.display = 'block';
+        }
+        videoUploadFallback.addEventListener('change', (e) => {
+            if (e.target.files.length > 0) {
+                // videoUpload.files = e.target.files; // Not supported in all browsers
+                handleFileSelect(e.target.files[0]);
+            }
+        });
+    }
+    // Make drop zone itself clickable for upload
+    // (Removed duplicate click event listener for dropZone)
     // --- Initial Load ---
     renderHistory();
+
+    // --- Advanced Text Options Toggle ---
+    const toggleAdvancedBtn = document.getElementById('toggle-advanced-text');
+    const advancedOptions = document.getElementById('advanced-text-options');
+    const advancedArrow = document.getElementById('advanced-arrow');
+    if (toggleAdvancedBtn && advancedOptions) {
+        toggleAdvancedBtn.addEventListener('click', () => {
+            const isOpen = !advancedOptions.classList.contains('hidden');
+            if (isOpen) {
+                advancedOptions.classList.add('hidden');
+                advancedArrow.style.transform = '';
+            } else {
+                advancedOptions.classList.remove('hidden');
+                advancedArrow.style.transform = 'rotate(180deg)';
+            }
+        });
+    }
+
+    // --- Tab Navigation Logic ---
+    const tabButtons = document.querySelectorAll('.tab-btn');
+    const tabPanels = document.querySelectorAll('.tab-panel');
+    tabButtons.forEach(btn => {
+        btn.addEventListener('click', () => {
+            // Remove active from all
+            tabButtons.forEach(b => b.classList.remove('active'));
+            tabPanels.forEach(panel => panel.classList.add('hidden'));
+            // Activate selected
+            btn.classList.add('active');
+            const panel = document.getElementById('tab-panel-' + btn.dataset.tab);
+            if (panel) panel.classList.remove('hidden');
+        });
+    });
+    // Show first tab by default
+    if (tabButtons.length && tabPanels.length) {
+        tabButtons[0].classList.add('active');
+        tabPanels[0].classList.remove('hidden');
+    }
 });

@@ -56,19 +56,31 @@ def _delete_from_gcs(blob_name):
 def get_available_font(preferred_fonts):
     """
     Tries to load a font from a list of preferred fonts.
-    Returns the path/name of the first font that can be loaded by Pillow.
+    Returns the path to the first font file that can be loaded by Pillow.
+    If no valid font file is found, falls back to a bundled DejaVuSans.ttf in the project directory.
     """
-    for font_choice in preferred_fonts:
+    from pathlib import Path
+    # Always include a bundled fallback font (ensure this file exists in your repo)
+    bundled_font = os.path.join(os.path.dirname(__file__), "DejaVuSans.ttf")
+    font_candidates = list(preferred_fonts) + [bundled_font]
+    for font_choice in font_candidates:
         try:
-            ImageFont.truetype(font_choice, size=10) # Try to load with a dummy size
-            print(f"Font '{font_choice}' is available.")
+            # If it's a font name, try to resolve to a file path using font_manager (if available)
+            if not os.path.isfile(font_choice):
+                try:
+                    from matplotlib import font_manager
+                    font_path = font_manager.findfont(font_choice, fallback_to_default=False)
+                    if os.path.isfile(font_path):
+                        font_choice = font_path
+                except Exception:
+                    pass
+            ImageFont.truetype(font_choice, size=10)
+            print(f"Font '{font_choice}' is available and will be used.")
             return font_choice
-        except (IOError, OSError): # Catch OSError as it's the base for IOError
-            print(f"Font '{font_choice}' not found or cannot be opened. Trying next.")
-        except Exception as e: # Catch any other PIL/FreeType specific errors
-            print(f"Error checking font '{font_choice}': {e}. Trying next.")
-    print("WARNING: No preferred fonts found. TextClip will use Pillow's default or may fail.")
-    return "sans-serif" # A very generic fallback, Pillow might handle this.
+        except Exception as e:
+            print(f"Font '{font_choice}' not found or cannot be opened. Trying next. Error: {e}")
+    print(f"WARNING: No preferred fonts found. Falling back to bundled font: {bundled_font}")
+    return bundled_font
 
 def is_imagemagick_available():
     """Check if ImageMagick's 'convert' command is available on the system."""
@@ -151,60 +163,73 @@ def convert_video_to_gif_task(self, gcs_video_blob_name, options):
                 actual_fps = 10
             # Your video processing logic ends here
             # Get text options from the frontend
-            text_overlay = options.get('text_overlay') # Corrected key
+            # --- Simplified Text Overlay (Best Practices) ---
+            text_overlay = options.get('text_overlay')
             if text_overlay:
-                print(f"Text overlay logic triggered for text: '{text_overlay}'")
                 try:
-                    text_size = int(options.get('text_size', 24)) # Corrected key
-                    text_color = options.get('text_color', 'white') # Corrected key
-                    
+                    def noneify(val):
+                        if val is None:
+                            return None
+                        if isinstance(val, str) and val.strip().lower() in ('none', 'null', ''):
+                            return None
+                        return val
+                    text_font = options.get('font_style') or options.get('text_font')
+                    text_font_size = int(options.get('text_size') or options.get('text-size') or 24)
+                    text_color = options.get('text_color') or options.get('text-color') or 'white'
+                    text_bg_color = noneify(options.get('text_bg_color') or options.get('text-bg-color'))
+                    text_align = options.get('text_align') or options.get('text-align') or 'center'
+                    horizontal_align = options.get('horizontal_align') or options.get('horizontal-align') or 'center'
+                    vertical_align = options.get('vertical_align') or options.get('vertical-align') or 'center'
+
+                    print(f"[DEBUG] Text overlay options: font={text_font}, size={text_font_size}, color={text_color}, bg_color={text_bg_color} (type: {type(text_bg_color)}), align={text_align}")
+
                     font_preferences = [
-                        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", # Try non-bold DejaVu first
-                        "/usr/share/fonts/truetype/liberation/LiberationSans.ttf", # Try non-bold Liberation
-                        "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf", # Explicit path for Liberation Sans Bold
-                        "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", # Explicit path for DejaVu Sans Bold
-                        "Arial",  # Should be available if ttf-mscorefonts-installer worked
-                        "Liberation Sans Bold", # From fonts-liberation2
-                        "DejaVu Sans Bold", # Name for dejavu
-                        "/Library/Fonts/Arial.ttf",  # macOS default
-                        "/System/Library/Fonts/Supplemental/Arial.ttf",  # macOS supplemental
-                        "/usr/share/fonts/truetype/freefont/FreeSans.ttf",  # Linux
+                        "/Library/Fonts/Roboto-Regular.ttf",
+                        "/usr/share/fonts/truetype/roboto/Roboto-Regular.ttf",
+                        "/Library/Fonts/Arial.ttf",
+                        "arial",
                     ]
-                    selected_font = get_available_font(font_preferences)
+                    font_path = get_available_font(font_preferences)
 
-                    if not is_imagemagick_available():
-                        print("WARNING: ImageMagick is not available. TextClip may fail if using method='caption' or default.")
-
-                    print(f"Attempting to create TextClip with: text='{text_overlay}', font='{selected_font}', size={text_size}, color='{text_color}'")
+                    txt_clip = None
                     try:
+                        print(f"[INFO] Trying TextClip with method='caption', width={subclip.w}")
                         txt_clip = TextClip(
                             text=text_overlay,
-                            font=selected_font,
-                            font_size=text_size,
+                            font=font_path,
+                            font_size=text_font_size,
                             color=text_color,
-                            bg_color=None  # Transparent background
-                        )
-                    except Exception as textclip_e:
-                        print(f"ERROR: TextClip creation failed with font '{selected_font}'. Trying fallback font 'DejaVu-Sans'. Error: {textclip_e}")
-                        try:
-                            txt_clip = TextClip(
-                                text=text_overlay,
-                                font="Arial",
-                                font_size=text_size,
-                                color=text_color,
-                                bg_color=None
-                            )
-                        except Exception as fallback_e:
-                            print(f"CRITICAL: Fallback TextClip creation failed. No text overlay will be applied. Error: {fallback_e}")
-                            txt_clip = None
-                    if txt_clip:
-                        txt_clip = txt_clip.with_position('center').with_duration(subclip.duration)
-                        subclip = CompositeVideoClip([subclip, txt_clip])
-                        print(f"Successfully applied text overlay: '{text_overlay}' at position 'center' with font '{selected_font}'")
-                except Exception as text_e:
-                    print(f"CRITICAL: Failed to create or apply text clip for '{text_overlay}'. Error: {text_e}. Skipping text overlay.")
-                    print(f"Traceback: {traceback.format_exc()}")
+                            bg_color=text_bg_color,
+                            method='label',
+                            size=(None, None),
+                            text_align=text_align,
+                            horizontal_align=horizontal_align,
+                            vertical_align=vertical_align,
+                        ).with_position(("center", "center")).with_duration(subclip.duration)
+                    except Exception as e:
+                        print(f"[WARN] TextClip with method='caption' failed: {e}\nTrying method='label'...")
+                        txt_clip = TextClip(
+                            text=text_overlay,
+                            font=font_path,
+                            font_size=text_font_size,
+                            color=text_color,
+                            bg_color=text_bg_color,
+                            method='label',
+                            text_align=text_align,
+                            horizontal_align=horizontal_align,
+                            vertical_align=vertical_align,
+                        ).with_position(("center", "center")).with_duration(subclip.duration)
+
+                    subclip = CompositeVideoClip([subclip, txt_clip])
+                    print(f"[INFO] Text overlay applied successfully.")
+                except Exception as e:
+                    print(f"[ERROR] Failed to apply text overlay: {e}")
+                    print(traceback.format_exc())
+
+            # After all processing and text overlay, write the GIF file
+            print(f"[DEBUG] Writing GIF to {temp_gif_path} with fps={actual_fps}")
             subclip.write_gif(temp_gif_path, fps=actual_fps)
+            print(f"[DEBUG] GIF written to {temp_gif_path}")
 
         # Upload the generated GIF to Google Cloud Storage
         # Note: The GIF name in GCS should not have any prefix if your download_gif route expects that.

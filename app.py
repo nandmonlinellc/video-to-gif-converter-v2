@@ -109,6 +109,17 @@ def start_conversion_task():
             'text_overlay': request.form.get('text-overlay'),
             'text_size': request.form.get('text-size'),
             'text_color': request.form.get('text-color'),
+            'text_bg_color': request.form.get('text-bg-color'),
+            'font_style': request.form.get('font-style'),
+            'text_position': request.form.get('text-position'),
+            'stroke_color': request.form.get('stroke-color'),
+            'stroke_width': request.form.get('stroke-width'),
+            'shadow_color': request.form.get('shadow-color'),
+            'shadow_offset_x': request.form.get('shadow-offset-x'),
+            'shadow_offset_y': request.form.get('shadow-offset-y'),
+            'text_align': request.form.get('text-align'),
+            'horizontal_align': request.form.get('horizontal-align'),
+            'vertical_align': request.form.get('vertical-align'),
         }
 
         if not uploaded_blob_name:
