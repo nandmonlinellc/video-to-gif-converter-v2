@@ -75,7 +75,7 @@
             <form id="converter-form" enctype="multipart/form-data">
                 <!-- File Upload Section -->
                 <div class="form-group">
-                    <label class="form-label">1. Upload Video File</label>
+                    <label class="form-label">1. Upload Video File or Paste Video URL</label>
                     <div id="drop-zone" class="drop-zone">
                         <div class="flex flex-col items-center justify-center pt-5 pb-6">
                             <svg class="w-10 h-10 mb-3 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-4-4V7a4 4 0 014-4h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V16a4 4 0 01-4 4H7z"></path></svg>
@@ -83,7 +83,11 @@
                             <p class="text-xs text-gray-500">MP4, MOV, AVI, WEBM (MAX. 50MB)</p>
                             <p id="file-name-display" class="mt-4 font-medium text-green-600"></p>
                         </div>
-                        <input id="video-upload" name="video" type="file" class="hidden" accept="video/*" required />
+                        <input id="video-upload" name="video" type="file" class="hidden" accept="video/*" />
+                    </div>
+                    <div class="mt-4">
+                        <label for="video-url" class="form-label text-sm">Or paste a video URL (YouTube, Twitter, etc.)</label>
+                        <input type="url" id="video-url" name="video_url" class="form-input" placeholder="https://www.youtube.com/watch?v=...">
                     </div>
                 </div>
                 
@@ -228,7 +232,7 @@
                 </div>
 
                 <!-- Submit Button -->
-                <button type="submit" id="submit-btn" class="w-full mt-6 px-8 py-3 bg-blue-600 text-white text-lg font-semibold rounded-lg shadow-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-50 transition-all duration-150 ease-in-out disabled:opacity-50 disabled:cursor-not-allowed">Convert to GIF</button>
+                <button type="submit" id="submit-btn" class="w-full mt-6 px-8 py-3 bg-blue-600 text-white text-lg font-semibold rounded-lg shadow-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-50 transition-all duration-150 ease-in-out disabled:opacity-50 disabled:cursor-not-allowed">Upload Video</button>
             </form>
 
             <!-- Loading & Result Sections -->

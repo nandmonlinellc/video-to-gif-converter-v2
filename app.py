@@ -9,6 +9,8 @@ from celery.result import AsyncResult
 import time
 from google.cloud import storage # Import GCS client
 import requests
+import yt_dlp
+import re
 
 app = Flask(__name__)
 
@@ -66,45 +68,68 @@ def serve_temp_file(filename):
 
 @app.route('/convert', methods=['POST'])
 def start_conversion_task():
-    if 'video' not in request.files:
-        return jsonify({'error': 'No video file part in the request.'}), 400
-    
-    file = request.files['video']
-    if file.filename == '':
-        return jsonify({'error': 'No video file selected.'}), 400
-
-    if not allowed_file(file.filename):
-        return jsonify({'error': 'File type not allowed.'}), 400
-
+    video_url = request.form.get('video_url', '').strip()
+    file = request.files.get('video')
+    temp_download_path = None
     try:
-        filename = secure_filename(file.filename)
-        unique_filename = f"{os.urandom(8).hex()}_{filename}"
-        
-        # Save to local /tmp first
-        local_temp_video_path = os.path.join(app.config['UPLOAD_FOLDER'], unique_filename)
-        file.save(local_temp_video_path)
-        app.logger.info(f"Video saved locally to {local_temp_video_path}")
+        if video_url and not file:
+            # Download video from URL using yt-dlp
+            ydl_opts = {
+                'outtmpl': os.path.join(app.config['UPLOAD_FOLDER'], '%(id)s.%(ext)s'),
+                'format': 'bestvideo+bestaudio/best',
+                'noplaylist': True,
+                'quiet': True,
+                'merge_output_format': 'mp4',
+            }
+            # Use cookies if YouTube URL
+            if re.search(r'youtube\.com|youtu\.be', video_url, re.IGNORECASE):
+                cookies_path = os.path.join(BASE_DIR, 'youtube_cookies.txt')
+                if os.path.exists(cookies_path):
+                    ydl_opts['cookiefile'] = cookies_path
+                else:
+                    app.logger.warning('youtube_cookies.txt not found; some YouTube videos may fail to download.')
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                info = ydl.extract_info(video_url, download=True)
+                temp_download_path = ydl.prepare_filename(info)
+                # If not mp4, try to find the merged file
+                if not temp_download_path.endswith('.mp4'):
+                    base = os.path.splitext(temp_download_path)[0]
+                    mp4_path = base + '.mp4'
+                    if os.path.exists(mp4_path):
+                        temp_download_path = mp4_path
+            filename = os.path.basename(temp_download_path)
+            unique_filename = f"{os.urandom(8).hex()}_{filename}"
+            local_temp_video_path = os.path.join(app.config['UPLOAD_FOLDER'], unique_filename)
+            os.rename(temp_download_path, local_temp_video_path)
+            app.logger.info(f"Video downloaded from URL to {local_temp_video_path}")
+        elif file and file.filename != '':
+            if not allowed_file(file.filename):
+                return jsonify({'error': 'File type not allowed.'}), 400
+            filename = secure_filename(file.filename)
+            unique_filename = f"{os.urandom(8).hex()}_{filename}"
+            local_temp_video_path = os.path.join(app.config['UPLOAD_FOLDER'], unique_filename)
+            file.save(local_temp_video_path)
+            app.logger.info(f"Video saved locally to {local_temp_video_path}")
+        else:
+            return jsonify({'error': 'No video file or URL provided.'}), 400
 
         # Upload to GCS
         gcs_video_blob_name = VIDEO_UPLOAD_GCS_PREFIX + unique_filename
         uploaded_blob_name = upload_to_gcs_from_app(local_temp_video_path, gcs_video_blob_name)
-
-        # Clean up local temp video file from Flask instance
         if os.path.exists(local_temp_video_path):
             os.remove(local_temp_video_path)
             app.logger.info(f"Cleaned up local video {local_temp_video_path}")
-        
+
         options = {
-            'start_time': float(request.form.get('start_time', 0)),
+            'start_time': parse_float(request.form.get('start_time', 0)),
             'end_time': request.form.get('end_time'),
-            'fps': int(request.form.get('fps', 10)),
+            'fps': parse_int(request.form.get('fps', 10)),
             'resize': request.form.get('resize', 'original'),
-            'speed': float(request.form.get('speed', 1.0)),
+            'speed': parse_float(request.form.get('speed', 1.0), 1.0),
             'crop_x': request.form.get('crop_x'),
             'crop_y': request.form.get('crop_y'),
             'crop_width': request.form.get('crop_width'),
             'crop_height': request.form.get('crop_height'),
-            # Pass the GIF folder path to the task
             'gif_folder': app.config['GIF_FOLDER'],
             'text_overlay': request.form.get('text-overlay'),
             'text_size': request.form.get('text-size'),
@@ -121,18 +146,64 @@ def start_conversion_task():
             'horizontal_align': request.form.get('horizontal-align'),
             'vertical_align': request.form.get('vertical-align'),
         }
-
         if not uploaded_blob_name:
             app.logger.error("Failed to upload video to GCS. Task not submitted.")
             return jsonify({'error': 'Failed to upload video to cloud storage.'}), 500
-
-        task = convert_video_to_gif_task.delay(uploaded_blob_name, options) # Pass GCS blob name
-        
+        task = convert_video_to_gif_task.delay(uploaded_blob_name, options)
         return jsonify({'task_id': task.id})
-
+    except yt_dlp.utils.DownloadError as e:
+        app.logger.error(f"yt-dlp download error: {e}")
+        return jsonify({'error': 'Failed to download video from URL. Please check the link and try again.'}), 400
     except Exception as e:
         app.logger.error(f"An error occurred during file upload or task submission: {e}")
-        return jsonify({'error': 'An unexpected error occurred during file upload.'}), 500
+        return jsonify({'error': 'An unexpected error occurred during file upload or URL processing.'}), 500
+    finally:
+        # Clean up any temp file if it still exists
+        if temp_download_path and os.path.exists(temp_download_path):
+            os.remove(temp_download_path)
+
+@app.route('/upload_url', methods=['POST'])
+def upload_video_from_url():
+    video_url = request.form.get('video_url', '').strip()
+    if not video_url:
+        return jsonify({'error': 'No video URL provided.'}), 400
+    temp_download_path = None
+    try:
+        ydl_opts = {
+            'outtmpl': os.path.join(app.config['UPLOAD_FOLDER'], '%(id)s.%(ext)s'),
+            'format': 'bestvideo+bestaudio/best',
+            'noplaylist': True,
+            'quiet': True,
+            'merge_output_format': 'mp4',
+        }
+        if re.search(r'youtube\.com|youtu\.be', video_url, re.IGNORECASE):
+            cookies_path = os.path.join(BASE_DIR, 'youtube_cookies.txt')
+            if os.path.exists(cookies_path):
+                ydl_opts['cookiefile'] = cookies_path
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            info = ydl.extract_info(video_url, download=True)
+            temp_download_path = ydl.prepare_filename(info)
+            if not temp_download_path.endswith('.mp4'):
+                base = os.path.splitext(temp_download_path)[0]
+                mp4_path = base + '.mp4'
+                if os.path.exists(mp4_path):
+                    temp_download_path = mp4_path
+        filename = os.path.basename(temp_download_path)
+        unique_filename = f"{os.urandom(8).hex()}_{filename}"
+        local_temp_video_path = os.path.join(app.config['UPLOAD_FOLDER'], unique_filename)
+        os.rename(temp_download_path, local_temp_video_path)
+        app.logger.info(f"Video downloaded from URL to {local_temp_video_path}")
+        preview_url = url_for('serve_temp_file', filename=unique_filename)
+        return jsonify({'preview_url': preview_url, 'filename': unique_filename})
+    except yt_dlp.utils.DownloadError as e:
+        app.logger.error(f"yt-dlp download error: {e}")
+        return jsonify({'error': 'Failed to download video from URL. Please check the link and try again.'}), 400
+    except Exception as e:
+        app.logger.error(f"An error occurred during URL upload: {e}")
+        return jsonify({'error': 'An unexpected error occurred during URL upload.'}), 500
+    finally:
+        if temp_download_path and os.path.exists(temp_download_path):
+            os.remove(temp_download_path)
 
 @app.route('/status/<task_id>')
 def task_status(task_id):
@@ -245,6 +316,23 @@ def privacy_page():
 @app.route('/sitemap.xml')
 def sitemap():
     return send_from_directory(app.root_path, 'sitemap.xml', mimetype='application/xml')
+
+
+def parse_float(val, default=0.0):
+    try:
+        if val is None or val == '':
+            return default
+        return float(val)
+    except (TypeError, ValueError):
+        return default
+
+def parse_int(val, default=10):
+    try:
+        if val is None or val == '':
+            return default
+        return int(val)
+    except (TypeError, ValueError):
+        return default
 
 
 if __name__ == '__main__':

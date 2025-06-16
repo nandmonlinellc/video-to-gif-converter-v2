@@ -85,10 +85,25 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
     
+    // --- Update Button Text Logic ---
+    if (submitBtn) {
+        submitBtn.textContent = 'Upload Video'; // Initial state
+        submitBtn.disabled = true;
+    }
+
+    // Enable and update button after file or URL preview
+    const enableConvertButton = () => {
+        if (submitBtn) {
+            submitBtn.textContent = 'Convert to GIF';
+            submitBtn.disabled = false;
+        }
+    };
+
     // --- File Upload & UI Flow ---
     const handleFileSelect = (file) => {
         if (!file) {
             if (fileNameDisplay) fileNameDisplay.textContent = 'No file selected';
+            if (submitBtn) submitBtn.disabled = true;
             return;
         }
         // Reset UI
@@ -112,9 +127,57 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (endTimeInput) endTimeInput.value = Math.floor(videoPreview.duration);
                 showElement(videoPreviewContainer);
                 showElement(optionsContainer);
+                enableConvertButton();
             };
         }
     };
+
+    // --- URL Upload & Preview Logic (Two-Step) ---
+    const urlInput = document.getElementById('video-url');
+    if (urlInput && submitBtn) {
+        urlInput.addEventListener('change', async function() {
+            const url = urlInput.value.trim();
+            if (!url) {
+                submitBtn.disabled = true;
+                return;
+            }
+            submitBtn.textContent = 'Uploading...';
+            submitBtn.disabled = true;
+            // Send URL to backend to download and get preview URL
+            try {
+                const formData = new FormData();
+                formData.append('video_url', url);
+                const response = await fetch('/upload_url', { method: 'POST', body: formData });
+                const result = await response.json();
+                if (response.ok && result.preview_url) {
+                    // Show preview using backend-served temp file
+                    if (videoPreview) {
+                        videoPreview.src = result.preview_url;
+                        videoPreview.onloadedmetadata = () => {
+                            if (startTimeInput) startTimeInput.value = 0;
+                            if (endTimeInput) endTimeInput.value = Math.floor(videoPreview.duration);
+                            showElement(videoPreviewContainer);
+                            showElement(optionsContainer);
+                            submitBtn.textContent = 'Convert to GIF';
+                            submitBtn.disabled = false;
+                        };
+                        showElement(videoPreviewContainer);
+                        showElement(optionsContainer);
+                    }
+                } else {
+                    errorMessageDiv.textContent = result.error || 'Failed to fetch video preview.';
+                    showElement(errorMessageDiv);
+                    submitBtn.textContent = 'Upload Video';
+                    submitBtn.disabled = true;
+                }
+            } catch (err) {
+                errorMessageDiv.textContent = 'Network error during video URL upload.';
+                showElement(errorMessageDiv);
+                submitBtn.textContent = 'Upload Video';
+                submitBtn.disabled = true;
+            }
+        });
+    }
 
     // --- Event Listeners ---
     if (videoUpload) {
@@ -278,6 +341,13 @@ document.addEventListener('DOMContentLoaded', () => {
             submitBtn.textContent = 'Uploading...';
 
             const formData = new FormData(form);
+            // If no file is selected, but a video URL is provided, ensure the backend gets the URL only
+            const fileInput = document.getElementById('video-upload');
+            const urlInput = document.getElementById('video-url');
+            if (fileInput && fileInput.files.length === 0 && urlInput && urlInput.value.trim() !== '') {
+                // Remove the 'video' field if empty to avoid sending an empty file
+                formData.delete('video');
+            }
             try {
                 const response = await fetch('/convert', { method: 'POST', body: formData });
                 const result = await response.json();

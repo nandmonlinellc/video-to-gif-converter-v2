@@ -9,6 +9,7 @@ google-cloud-storage==3.1.0
 requests==2.32.4
 Pillow>=9.0.0
 matplotlib==3.10.3
+yt-dlp>=2024.1.1
 # ImageMagick is a system dependency, not a pip package, but note it here for deployment
 # RUN apt-get install -y imagemagick   # For Docker/Ubuntu
 # Or: brew install imagemagick         # For macOS
