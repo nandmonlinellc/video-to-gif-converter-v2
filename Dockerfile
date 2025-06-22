@@ -43,12 +43,18 @@ RUN mkdir -p /app/static/uploads && \
 
 RUN pip install --no-cache-dir -r requirements.txt
 
+# Install yt-dlp (latest) and ensure ffmpeg is available
+RUN pip install --no-cache-dir yt-dlp
+
 COPY . .
 COPY supervisord.conf /etc/supervisor/conf.d/supervisord.conf
 
 RUN chown -R appuser:appgroup /etc/supervisor/conf.d/supervisord.conf
 RUN chown -R appuser:appgroup /app
 
+
+# Copy youtube_cookies.txt for yt-dlp (if present)
+COPY youtube_cookies.txt /app/youtube_cookies.txt
 
 USER appuser
 

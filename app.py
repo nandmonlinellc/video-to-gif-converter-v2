@@ -1,5 +1,5 @@
 import os
-from flask import Flask, render_template, request, jsonify, url_for, send_from_directory , Response # 👈 Import send_from_directory
+from flask import Flask, render_template, request, jsonify, url_for, send_from_directory , Response, make_response # 👈 Import send_from_directory
 from werkzeug.utils import secure_filename
 from werkzeug.middleware.proxy_fix import ProxyFix
 from apscheduler.schedulers.background import BackgroundScheduler
@@ -31,7 +31,7 @@ os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 os.makedirs(app.config['GIF_FOLDER'], exist_ok=True)
 
 ALLOWED_EXTENSIONS = {'mp4', 'mov', 'avi', 'mkv', 'webm'}
-BUCKET_NAME = "video-to-gif-462512-gifs" # Ensure this matches your bucket name
+BUCKET_NAME = "video-to-gif-cheap-us-central1" # Updated to use single-region, low-cost bucket
 VIDEO_UPLOAD_GCS_PREFIX = "video_uploads/"
 
 def upload_to_gcs_from_app(local_file_path, destination_blob_name):
@@ -63,8 +63,12 @@ def index():
 # 👇 **CHANGE 2: Add a new route to serve files from /tmp**
 @app.route('/temp/<filename>')
 def serve_temp_file(filename):
-    """Serves a file from the temporary GIF folder."""
-    return send_from_directory(app.config['GIF_FOLDER'], filename)
+    """Serves a file from the temporary GIF folder with CORS headers."""
+    response = make_response(send_from_directory(app.config['GIF_FOLDER'], filename))
+    response.headers['Access-Control-Allow-Origin'] = '*'
+    response.headers['Access-Control-Allow-Methods'] = 'GET, OPTIONS'
+    response.headers['Access-Control-Allow-Headers'] = 'Content-Type'
+    return response
 
 @app.route('/convert', methods=['POST'])
 def start_conversion_task():
@@ -81,13 +85,6 @@ def start_conversion_task():
                 'quiet': True,
                 'merge_output_format': 'mp4',
             }
-            # Use cookies if YouTube URL
-            if re.search(r'youtube\.com|youtu\.be', video_url, re.IGNORECASE):
-                cookies_path = os.path.join(BASE_DIR, 'youtube_cookies.txt')
-                if os.path.exists(cookies_path):
-                    ydl_opts['cookiefile'] = cookies_path
-                else:
-                    app.logger.warning('youtube_cookies.txt not found; some YouTube videos may fail to download.')
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                 info = ydl.extract_info(video_url, download=True)
                 temp_download_path = ydl.prepare_filename(info)
@@ -111,46 +108,49 @@ def start_conversion_task():
             file.save(local_temp_video_path)
             app.logger.info(f"Video saved locally to {local_temp_video_path}")
         else:
-            return jsonify({'error': 'No video file or URL provided.'}), 400
+            return jsonify({'error': 'No video file or URL provided.'), 400
 
-        # Upload to GCS
+        # Upload the video to GCS
         gcs_video_blob_name = VIDEO_UPLOAD_GCS_PREFIX + unique_filename
         uploaded_blob_name = upload_to_gcs_from_app(local_temp_video_path, gcs_video_blob_name)
+        if uploaded_blob_name:
+            # Make the blob public and get its URL
+            storage_client = storage.Client()
+            bucket = storage_client.bucket(BUCKET_NAME)
+            blob = bucket.blob(uploaded_blob_name)
+            # blob.make_public()  # Do not make uploaded videos public
+            public_url = None  # No public URL since file is private
+        else:
+            public_url = None
         if os.path.exists(local_temp_video_path):
             os.remove(local_temp_video_path)
             app.logger.info(f"Cleaned up local video {local_temp_video_path}")
+        if not uploaded_blob_name:
+            return jsonify({'error': 'Failed to upload video to cloud storage.'}), 500
 
+        # --- NEW: Submit Celery task for GIF conversion ---
+        # Parse options from request (add more as needed)
         options = {
-            'start_time': parse_float(request.form.get('start_time', 0)),
+            'start_time': request.form.get('start_time', 0.0),
             'end_time': request.form.get('end_time'),
-            'fps': parse_int(request.form.get('fps', 10)),
+            'fps': request.form.get('fps', 10),
             'resize': request.form.get('resize', 'original'),
-            'speed': parse_float(request.form.get('speed', 1.0), 1.0),
+            'speed': request.form.get('speed', 1.0),
             'crop_x': request.form.get('crop_x'),
             'crop_y': request.form.get('crop_y'),
             'crop_width': request.form.get('crop_width'),
             'crop_height': request.form.get('crop_height'),
-            'gif_folder': app.config['GIF_FOLDER'],
-            'text_overlay': request.form.get('text-overlay'),
-            'text_size': request.form.get('text-size'),
-            'text_color': request.form.get('text-color'),
-            'text_bg_color': request.form.get('text-bg-color'),
-            'font_style': request.form.get('font-style'),
-            'text_position': request.form.get('text-position'),
-            'stroke_color': request.form.get('stroke-color'),
-            'stroke_width': request.form.get('stroke-width'),
-            'shadow_color': request.form.get('shadow-color'),
-            'shadow_offset_x': request.form.get('shadow-offset-x'),
-            'shadow_offset_y': request.form.get('shadow-offset-y'),
-            'text_align': request.form.get('text-align'),
-            'horizontal_align': request.form.get('horizontal-align'),
-            'vertical_align': request.form.get('vertical-align'),
+            # Add more options as needed
         }
-        if not uploaded_blob_name:
-            app.logger.error("Failed to upload video to GCS. Task not submitted.")
-            return jsonify({'error': 'Failed to upload video to cloud storage.'}), 500
-        task = convert_video_to_gif_task.delay(uploaded_blob_name, options)
-        return jsonify({'task_id': task.id})
+        app.logger.info(f"Submitting Celery task for GIF conversion: gcs_video_blob_name={gcs_video_blob_name}, options={options}")
+        try:
+            task = convert_video_to_gif_task.apply_async(args=[gcs_video_blob_name, options])
+            app.logger.info(f"Celery task submitted. Task ID: {task.id}")
+        except Exception as e:
+            app.logger.error(f"Failed to submit Celery task: {e}")
+            return jsonify({'error': 'Failed to submit GIF conversion task.'}), 500
+
+        return jsonify({'task_id': task.id, 'status_url': url_for('task_status', task_id=task.id, _external=True)})
     except yt_dlp.utils.DownloadError as e:
         app.logger.error(f"yt-dlp download error: {e}")
         return jsonify({'error': 'Failed to download video from URL. Please check the link and try again.'}), 400
@@ -175,11 +175,9 @@ def upload_video_from_url():
             'noplaylist': True,
             'quiet': True,
             'merge_output_format': 'mp4',
+            # Set cache dir to a writable location
+            'cachedir': app.config['UPLOAD_FOLDER'],
         }
-        if re.search(r'youtube\.com|youtu\.be', video_url, re.IGNORECASE):
-            cookies_path = os.path.join(BASE_DIR, 'youtube_cookies.txt')
-            if os.path.exists(cookies_path):
-                ydl_opts['cookiefile'] = cookies_path
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(video_url, download=True)
             temp_download_path = ydl.prepare_filename(info)
@@ -193,13 +191,15 @@ def upload_video_from_url():
         local_temp_video_path = os.path.join(app.config['UPLOAD_FOLDER'], unique_filename)
         os.rename(temp_download_path, local_temp_video_path)
         app.logger.info(f"Video downloaded from URL to {local_temp_video_path}")
-        preview_url = url_for('serve_temp_file', filename=unique_filename)
+        preview_url = url_for('serve_temp_file', filename=unique_filename, _external=True)
         return jsonify({'preview_url': preview_url, 'filename': unique_filename})
     except yt_dlp.utils.DownloadError as e:
         app.logger.error(f"yt-dlp download error: {e}")
         return jsonify({'error': 'Failed to download video from URL. Please check the link and try again.'}), 400
     except Exception as e:
-        app.logger.error(f"An error occurred during URL upload: {e}")
+        import traceback
+        tb = traceback.format_exc()
+        app.logger.error(f"An error occurred during URL upload: {e}\nTraceback:\n{tb}\nvideo_url={video_url} temp_download_path={temp_download_path}")
         return jsonify({'error': 'An unexpected error occurred during URL upload.'}), 500
     finally:
         if temp_download_path and os.path.exists(temp_download_path):
@@ -209,12 +209,12 @@ def upload_video_from_url():
 def task_status(task_id):
     """Endpoint for the frontend to poll the status of a background task."""
     task = AsyncResult(task_id, app=celery_app)
-    
     if task.state == 'PENDING':
         response = {'state': task.state, 'status': 'Pending...'}
     elif task.state != 'FAILURE':
         response = {'state': task.state, 'status': 'In Progress...'}
         if task.state == 'SUCCESS':
+            # The Celery task returns a dict with gif_url, width, height, etc.
             response = task.info
     else:
         response = {
@@ -250,7 +250,7 @@ def cleanup_old_gcs_gifs():
     """Delete GIFs older than 24 hours from the GCS bucket."""
     from google.cloud import storage
     import datetime
-    BUCKET_NAME = "video-to-gif-462512-gifs"
+    BUCKET_NAME = "video-to-gif-cheap-us-central1"
     try:
         storage_client = storage.Client()
         bucket = storage_client.bucket(BUCKET_NAME)
@@ -271,7 +271,7 @@ def cleanup_old_gcs_gifs():
 scheduler.add_job(cleanup_old_gcs_gifs, 'interval', hours=24)
 
 scheduler.start()
-atexit.register(lambda: scheduler.shutdown())
+atexit.register(lambda: scheduler.shutdown(wait=False))
 
 
 @app.route('/download_gif/<string:filename>')
@@ -280,12 +280,15 @@ def download_gif(filename):
     Downloads a file from GCS and serves it to the user.
     This acts as a proxy to enforce the download.
     """
-    # Construct the public URL of the object in the bucket
-    gcs_url = f"https://storage.googleapis.com/{BUCKET_NAME}/{filename}"
-
+    # Generate a signed URL for the object in the bucket (valid for 10 minutes)
     try:
-        # Fetch the file content from the public URL
-        r = requests.get(gcs_url, stream=True)
+        storage_client = storage.Client()
+        bucket = storage_client.bucket(BUCKET_NAME)
+        blob = bucket.blob(filename)
+        signed_url = blob.generate_signed_url(version="v4", expiration=600, method="GET")
+
+        # Fetch the file content from the signed URL
+        r = requests.get(signed_url, stream=True)
 
         # Check if the request to GCS was successful
         if r.status_code != 200:
@@ -334,6 +337,11 @@ def parse_int(val, default=10):
     except (TypeError, ValueError):
         return default
 
+if __name__ == '__main__':
+    # WARNING: Do not use app.run() in production! Use a WSGI server like Gunicorn or uWSGI.
+    # Only run the Flask development server if FLASK_ENV is not set to 'production'
+    if os.environ.get('FLASK_ENV') != 'production':
+        app.run(debug=True, use_reloader=False)
 
 if __name__ == '__main__':
     app.run(debug=True, use_reloader=False)

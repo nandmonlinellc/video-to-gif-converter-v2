@@ -8,7 +8,7 @@ from PIL import ImageFont # For checking font existence with Pillow
 
 
 # --- Configuration ---
-BUCKET_NAME = "video-to-gif-462512-gifs"
+BUCKET_NAME = "video-to-gif-cheap-us-central1"  # Updated to use single-region, low-cost bucket
 
 celery_app = Celery(
     'tasks',
